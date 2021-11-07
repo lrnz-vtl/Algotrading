@@ -30,7 +30,12 @@ class TinyData:
         raw_data = self.asset_historical_data(asset_id, start_timestamp)
         candles = pd.DataFrame(raw_data['candles'])
         time_price = pd.DataFrame(raw_data['timestamps'])
-        price=np.append(candles['close'].values, time_price['price'])
-        time=np.append(candles['timestamp'].values, time_price['timestamp'])
-        result = np.vstack((time, price)).T
+        price=np.append(candles['close'].values, time_price['price'].values)
+        time=np.append(pd.to_datetime(candles['timestamp'],unit='s').values,
+                       pd.to_datetime(time_price['timestamp'],unit='s').values)
+        result=pd.DataFrame({'datetime':time,'price':price})
         return result
+
+    def compute_moving_average(self, df, interval="3h"):
+        """Compute the moving average from processed_price_data"""
+        return result.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
