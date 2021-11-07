@@ -1,4 +1,6 @@
 import requests, pprint
+import pandas as pd
+import numpy as np
 
 class TinyData:
     """Import Tinyman data from TinyChart. Prices expressed in Algorand"""
@@ -22,3 +24,13 @@ class TinyData:
     def asset_historical_data(self, asset_id, start_timestamp=0):
         """Return historical price data for asset_id starting from start_timestamp"""
         return requests.get(url=f'https://api.tinychart.org/asset/{asset_id}/prices/?start={start_timestamp}').json()
+
+    def processed_price_data(self, asset_id, start_timestamp=0):
+        """Return processed data of historical prices"""
+        raw_data = self.asset_historical_data(asset_id, start_timestamp)
+        candles = pd.DataFrame(raw_data['candles'])
+        time_price = pd.DataFrame(raw_data['timestamps'])
+        price=np.append(candles['close'].values, time_price['price'])
+        time=np.append(candles['timestamp'].values, time_price['timestamp'])
+        result = np.vstack((time, price)).T
+        return result
