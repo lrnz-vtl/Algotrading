@@ -38,4 +38,4 @@ class TinyData:
 
     def compute_moving_average(self, df, interval="3h"):
         """Compute the moving average from processed_price_data"""
-        return result.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
+        return df.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
