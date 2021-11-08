@@ -7,7 +7,7 @@ class DataStore:
     """Up-to-date prices of all main coins and key metrics"""
 
     assets = [163650, 283820866, 31566704, 226701642, 320259224, 27165954, 312769,
-              300208676, 384303832, 287867876, 251014570, 230946361, 367058172, 137594422,
+              300208676, 384303832, 287867876, 230946361, 367058172, 137594422,
               310014962, 378382099, 137020565, 359383233, 297995609, 241759159]
 
     def __init__(self):
@@ -19,7 +19,9 @@ class DataStore:
         self.fetch_data()
 
     def fetch_data(self):
+        start=datetime.datetime.now().timestamp()
         for asset_id in DataStore.assets:
+            n,_=self.get_name(asset_id)
             price = self.scraper.processed_price_data(asset_id)
             summary = self.scraper.asset_summary(asset_id)
             self.data[asset_id]['summary'] = {key: summary[key] for key in
@@ -32,6 +34,7 @@ class DataStore:
 
         self.update_current_price()
         self.last_update_full = datetime.datetime.now().time()
+        print(f'Updated price data in {datetime.datetime.now().timestamp()-start:.2f} seconds.')
 
     def update_current_price(self):
         instant_prices = self.scraper.all_prices()
@@ -55,7 +58,6 @@ class DataStore:
             300208676: ('Smile Coin', 'SMILE'),
             384303832: ('AKITA INU TOKEN', 'AKITA'),
             287867876: ('Opulous', 'OPUL'),
-            251014570: ('Blocks', 'Block'),
             230946361: ('AlgoGems', 'GEMS'),
             367058172: ('Realio Network LTD', 'RST'),
             137594422: ('HEADLINE', 'HDL'),
