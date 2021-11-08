@@ -4,12 +4,8 @@ from assets import assets, get_name
 from time import perf_counter
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict
-
-
-def compute_moving_average(df: pd.DataFrame, interval: str = "3h"):
-    """Compute the moving average from processed_price_data"""
-    return df.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
+from typing import Dict, Iterable, Tuple
+import collections
 
 
 @contextmanager
@@ -52,7 +48,7 @@ class AssetData:
     slow: SlowData
 
 
-class DataStore:
+class DataStore(collections.Mapping):
     """Up-to-date prices of all main coins and key metrics"""
 
     def __init__(self):
@@ -97,3 +93,9 @@ class DataStore:
 
     def __getitem__(self, asset_id):
         return self.data[asset_id]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self) -> Iterable[Tuple[int, AssetData]]:
+        return iter(self.data)
