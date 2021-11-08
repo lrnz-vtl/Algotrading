@@ -25,10 +25,9 @@ class DataStore:
             n,_=self.get_name(asset_id)
             price = self.scraper.processed_price_data(asset_id)
             summary = self.scraper.asset_summary(asset_id)
-            self.data[asset_id]['summary'] = {key: summary[key] for key in
-                                               ['total_usd_reserves','supply',
-                                                'circulating_supply','decimals',
-                                                'volatility','change24h','transactions'] }
+            for key in ['total_usd_reserves','supply', 'circulating_supply',
+                        'decimals', 'volatility','change24h','transactions']:
+                self.data[asset_id][key] = summary[key]
             self.data[asset_id]['price_history'] = price
             self.data[asset_id]['MA_2h'] = self.compute_moving_average(price, "2h")
             self.data[asset_id]['MA_15min'] = self.compute_moving_average(price, "15min")
