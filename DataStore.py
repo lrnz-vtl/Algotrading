@@ -1,6 +1,7 @@
 import datetime
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from TinyData import TinyData
 
 class DataStore:
@@ -72,3 +73,20 @@ class DataStore:
     def compute_moving_average(self, df, interval="3h"):
         """Compute the moving average from processed_price_data"""
         return df.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
+
+
+    def plot_asset(ds, asset_id):
+        """Show a plot of the historical price of a given asset"""
+        plt.figure(figsize=(14,7))
+        name,ticker = ds.get_name(asset_id)
+        plt.title(name,fontsize=14)
+        plt.ylabel(f'ALGO per {ticker}',fontsize=12)
+        plt.plot(ds.data[asset_id]['price_history'].index,ds.data[asset_id]['price_history']['price'].values,
+                 label='Price', color='C0', alpha=0.65)
+        plt.plot(ds.data[asset_id]['MA_15min'].index,ds.data[asset_id]['MA_15min']['price'].values,
+                 label='Moving Avg (15min)', color='C1', alpha=0.85)
+        plt.plot(ds.data[asset_id]['MA_2h'].index,ds.data[asset_id]['MA_2h']['price'].values,
+                 label='Moving Avg (2h)', color='C3',alpha=0.9)
+        plt.grid()
+        plt.legend(fontsize=12)
+        plt.show()
