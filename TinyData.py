@@ -35,7 +35,3 @@ class TinyData:
                        pd.to_datetime(time_price['timestamp'],unit='s').values)
         result=pd.DataFrame({'datetime':time,'price':price})
         return result.set_index('datetime')
-
-    def compute_moving_average(self, df, interval="3h"):
-        """Compute the moving average from processed_price_data"""
-        return df.resample(interval).mean().fillna(0).rolling(window=3, min_periods=1).mean()
