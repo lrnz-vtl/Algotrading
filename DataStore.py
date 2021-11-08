@@ -33,15 +33,15 @@ class DataStore:
             self.data[asset_id]['MA_15min'] = self.compute_moving_average(price, "15min")
 
         self.update_current_price()
-        self.last_update_full = datetime.datetime.now().time()
-        print(f'Updated price data in {datetime.datetime.now().timestamp()-start:.2f} seconds.')
+        self.last_update_full = datetime.datetime.now()
+        print(f'Updated price data in {self.last_update_full.timestamp()-start:.2f} seconds.')
 
     def update_current_price(self):
         instant_prices = self.scraper.all_prices()
         for asset_id in DataStore.assets:
             self.data[asset_id]['price_last'] = instant_prices['assets'][str(asset_id)]['price']
             self.data[asset_id]['price1h_last'] = instant_prices['assets'][str(asset_id)]['price1h']
-        self.last_update_price = datetime.datetime.now().time()
+        self.last_update_price = datetime.datetime.now()
         
     
     def get_name(self, asset_id):
