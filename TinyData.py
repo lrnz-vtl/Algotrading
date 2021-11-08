@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 class TinyData:
-    """Import Tinyman data from TinyChart. Prices expressed in Algorand"""
+    """Import Tinyman data from TinyChart, prices expressed in Algorand"""
 
     def all_assets(self):
         """Return list of all assets with their summary"""
