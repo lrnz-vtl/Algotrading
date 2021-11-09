@@ -76,7 +76,7 @@ class DataStore(collections.Mapping):
                 slow = SlowData(price=price, summary=summary)
                 self.data[asset_id] = AssetData(slow=slow, fast=fastData[asset_id])
 
-        # TODO Use logger instead of this
+        # TODO Use trade_logger instead of this
         print(f'Updated slow price data in {t():.4f} seconds.')
 
     def get_fast_data(self):
@@ -97,5 +97,5 @@ class DataStore(collections.Mapping):
     def __len__(self):
         return len(self.data)
 
-    def __iter__(self) -> Iterable[Tuple[int, AssetData]]:
-        return iter(self.data)
+    def __iter__(self):
+        return self.data.__iter__()
