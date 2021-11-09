@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from swapper import Swapper
 from tinydata import TinyData
 import pprint, algosdk
