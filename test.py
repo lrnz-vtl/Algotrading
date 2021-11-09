@@ -5,7 +5,8 @@ from daemon import runner
 
 from datastore import DataStore
 from assets import assets
-from strategies import StrategyStupid, Portfolio
+from strategies import StrategyStupid
+from wallets import Portfolio
 
 async def update_fast(ds):
     print('Running fast updates every 10 sec.')
