@@ -1,7 +1,6 @@
 import unittest
 import logging
 from swapper import Swapper
-import sys
 from tests.key import get_private_key, address
 from trade_logger.text import TextLogger
 
@@ -9,18 +8,21 @@ from trade_logger.text import TextLogger
 class TestSwapper(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
-        logger = logging.getLogger()
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.DEBUG)
-        logger.addHandler(handler)
+
+        logging.basicConfig(level=logging.NOTSET)
+        logger = logging.getLogger("testSwapper")
 
         key = get_private_key()
 
         trade_logger = TextLogger("/home/lorenzo/log.txt")
 
-        self.swapper = Swapper(logger=logger, tradeLogger=trade_logger, address=address, private_key=key)
-        super().__init__()
+        self.swapper = Swapper(logger=logger, tradeLogger=trade_logger, address=address, private_key=key, testnet=True)
+        super().__init__(*args, **kwargs)
 
     def test_quote(self):
-        print('test')
-        pass
+        quantity = 1000
+        target_price = 0.085
+        asset1 = 0
+        asset2 = 10458941
+
+        self.swapper.swap(asset1, asset2, quantity, target_price)

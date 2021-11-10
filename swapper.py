@@ -1,4 +1,4 @@
-from tinyman.v1.client import TinymanMainnetClient
+from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
 from datetime import datetime, timezone
 import time as _time
 from trade_logger.base import TradeLogger, TradeLog, TradeInfo
@@ -10,12 +10,18 @@ class Swapper:
 
     def __init__(self, address, private_key,
                  tradeLogger: TradeLogger,
-                 logger: Logger):
+                 logger: Logger,
+                 testnet: bool):
         self.logger = logger
         self.tradeLogger = tradeLogger
         self.private_key = private_key
         self.address = address
-        self.client = TinymanMainnetClient(user_address=address)
+
+        if testnet:
+            client = TinymanTestnetClient
+        else:
+            client = TinymanMainnetClient
+        self.client = client(user_address=address)
 
         # Check if the account is opted into Tinyman and optin if necessary
         if not self.client.is_opted_in():
@@ -26,6 +32,9 @@ class Swapper:
 
     def swap(self, asset1_id, asset2_id, quantity, target_price, slippage=0.01, excess_min=0.01):
         """Swap a given quantity asset1 for asset2 if its value is above target_price."""
+
+        self.logger.info(f'Attempting to trade {asset2_id} per {asset1_id}')
+
         asset1 = self.client.fetch_asset(asset1_id)  # ALGO
         asset2 = self.client.fetch_asset(asset2_id)  # USDC
         # Fetch the pool we will work with
@@ -33,8 +42,8 @@ class Swapper:
         # Get a quote for a swap of 1 asset1 to asset2 with given slippage tolerance
         quote = pool.fetch_fixed_input_swap_quote(asset1(quantity), slippage=slippage)
 
-        self.logger.info(quote)
-        self.logger.info(f'{asset2.name} per {asset1.name}: {quote.price} (worst case: {quote.price_with_slippage})')
+        self.logger.info(f"Got quote: {quote}")
+        self.logger.info(f"quote.price_with_slippage = {quote.price_with_slippage}")
 
         # We only want to sell if asset1 is > target_price*asset2
         if quote.price_with_slippage > target_price:
@@ -67,6 +76,9 @@ class Swapper:
                     transaction_group = pool.prepare_redeem_transactions(amount)
                     transaction_group.sign_with_private_key(self.address, self.private_key)
                     result = self.client.submit(transaction_group, wait=True)
+
+        else:
+            self.logger.info("Trade canceled because quote.price_with_slippage <= target_price")
 
     def log_trade(self, tradeInfo: TradeInfo):
         # TODO make these calls happen at the same exact time somehow

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from tinyman.v1.pools import SwapQuote
 
+
 @dataclass
 class TradeInfo:
     quote: SwapQuote
@@ -13,11 +14,12 @@ class TradeInfo:
     slippage: float
     excess_min: float
 
+
 @dataclass
 class TradeLog:
     tradeInfo: TradeInfo
     now: datetime
-    utcnow : datetime
+    utcnow: datetime
 
 
 class TradeLogger(ABC):
