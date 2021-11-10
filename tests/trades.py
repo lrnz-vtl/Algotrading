@@ -31,4 +31,4 @@ class TestSwapper(unittest.TestCase):
         get_account_data(address=address, testnet=True)
 
     def test_portfolio(self):
-        Portfolio(address=address)
+        Portfolio(address=address, testnet=True)
