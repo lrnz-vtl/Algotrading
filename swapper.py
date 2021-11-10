@@ -19,7 +19,7 @@ class Swapper:
 
         # Check if the account is opted into Tinyman and optin if necessary
         if not self.client.is_opted_in():
-            print('Account not opted into app, opting in now..')
+            self.logger.info('Account not opted into app, opting in now..')
             transaction_group = self.client.prepare_app_optin_transactions()
             transaction_group.sign_with_private_key(self.address, self.private_key)
             result = self.client.submit(transaction_group, wait=True)
