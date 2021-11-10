@@ -4,6 +4,10 @@ import numpy as np
 from typing import Dict, Iterable, Tuple
 from tinydata import TinyData
 
+def get_asset_data(asset_id):
+    asset = requests.get(url=f'https://algoexplorerapi.io/idx2/v2/assets/{asset_id}').json()
+    return asset['asset']
+
 def get_account_data(address=None):
     """Query wallet data from AlgoExplorer"""
 
@@ -12,9 +16,8 @@ def get_account_data(address=None):
 
     # set up dictionary with values for each coin
     coins = {0 : data['amount']/10**6}
-    for d in data['assets']:        
-        decimals = TinyData().asset_summary(d['asset-id'])['decimals']
-        coins[d['asset-id']] = d['amount']/10**decimals
+    for d in data['assets']:
+        coins[d['asset-id']] = d['amount']/10**get_asset_data(d['asset-id'])['params']['decimals']
         
     # return the assets in the wallet
     # note: we are discarding some info here (rewards, offline, frozen, etc)
