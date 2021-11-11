@@ -3,7 +3,7 @@ import logging
 from swapper import Swapper
 from tests.key import get_private_key, address
 from trade_logger.text import TextLogger
-
+from wallets import get_account_data, Portfolio
 
 class TestSwapper(unittest.TestCase):
 
@@ -26,3 +26,9 @@ class TestSwapper(unittest.TestCase):
         asset2 = 10458941
 
         self.swapper.swap(asset1, asset2, quantity, target_price)
+
+    def test_account_data(self):
+        get_account_data(address=address, testnet=True)
+
+    def test_portfolio(self):
+        Portfolio(address=address, testnet=True)
