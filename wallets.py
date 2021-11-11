@@ -14,9 +14,9 @@ def get_account_data(address=None, testnet=False):
     """Query wallet data from AlgoExplorer"""
 
     if testnet:
-        url = f'https://algoexplorerapi.io/v2/accounts/{address}'
+        url = f'https://testnet.algoexplorerapi.io/v2/accounts/{address}'
     else:
-        url = f'https://testnet.algoexplorerapi.io/api-dev/v2/accounts/{address}'
+        url = f'https://algoexplorerapi.io/v2/accounts/{address}'
 
     # as specified here https://algoexplorer.io/api-dev/v2
     data = requests.get(url=url).json()
