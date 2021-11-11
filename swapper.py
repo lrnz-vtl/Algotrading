@@ -1,4 +1,5 @@
 from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
+from tinyman.v1.optin import prepare_asset_optin_transactions
 from datetime import datetime, timezone
 import time as _time
 from trade_logger.base import TradeLogger, TradeLog, TradeInfo
@@ -30,13 +31,40 @@ class Swapper:
             transaction_group.sign_with_private_key(self.address, self.private_key)
             result = self.client.submit(transaction_group, wait=True)
 
-    def swap(self, asset1_id, asset2_id, quantity, target_price, slippage=0.01, excess_min=0.01):
+    def asset_optin(self, asset_id):
+        """Opt in to an asset"""
+        # for algorand, nothing to be done
+        if (asset_id==0):
+            return
+        acc_info = self.client.algod.account_info(self.address)
+        optin = False
+        for a in acc_info['assets']:
+            if a['asset-id']==asset_id:
+                optin = True
+                break
+        if (not optin):
+            txn_group = prepare_asset_optin_transactions(
+                asset_id =asset_id,
+                sender=self.address,
+                suggested_params=self.client.algod.suggested_params()
+            )
+            txn_group.sign_with_private_key(self.address, self.private_key)
+            result = self.client.submit(txn_group, wait=True)
+
+
+    def swap(self, asset1_id, asset2_id, quantity, target_price,
+             slippage=0.01, excess_min=0.01, skip_optin=False):
         """Swap a given quantity asset1 for asset2 if its value is above target_price."""
 
         self.logger.info(f'Attempting to trade {asset2_id} per {asset1_id}')
 
         asset1 = self.client.fetch_asset(asset1_id)  # ALGO
         asset2 = self.client.fetch_asset(asset2_id)  # USDC
+        # check if assets are authorized on wallet and add them if they are not
+        if (not skip_optin):
+            self.asset_optin(asset1_id)
+            self.asset_optin(asset2_id)
+
         # Fetch the pool we will work with
         pool = self.client.fetch_pool(asset2, asset1)
         # Get a quote for a swap of 1 asset1 to asset2 with given slippage tolerance
