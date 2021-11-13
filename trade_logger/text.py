@@ -15,3 +15,4 @@ class TextLogger(TradeLogger):
     def log(self, trade: TradeLog):
         with open(self.fname, 'a') as f:
             f.write(str(asdict(trade)))
+            f.write('\n')
