@@ -1,9 +1,8 @@
 import unittest
 import logging
-from stream.marketstream import PoolStream, MultiPoolStream
+from stream.marketstream import PoolStream, MultiPoolStream, log_stream
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
-from asyncio.exceptions import TimeoutError
 
 
 class TestStream(unittest.TestCase):
@@ -21,17 +20,11 @@ class TestStream(unittest.TestCase):
 
         poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, log_interval=5, sample_interval=1)
 
-        async def run():
-            async def foo():
-                async for x in poolStream.run():
-                    self.logger.info(x)
+        def logf(x):
+            self.logger.info(x)
 
-            try:
-                await asyncio.wait_for(foo(), timeout=11)
-            except TimeoutError:
-                pass
-
-        asyncio.run(run())
+        logger_coroutine = log_stream(poolStream.run(), timeout=11, logger_fun=logf)
+        asyncio.run(logger_coroutine)
 
     def test_pools(self):
         assetPairs = [
@@ -41,16 +34,10 @@ class TestStream(unittest.TestCase):
 
         client = TinymanMainnetClient()
 
-        multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client,
-                                          sample_interval=1, log_interval=5, timeout=11)
+        multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client, sample_interval=1, log_interval=5)
 
-        async def run():
-            async def foo():
-                async for x in multiPoolStream.run():
-                    self.logger.info(x)
-            try:
-                await asyncio.wait_for(foo(), timeout=11)
-            except TimeoutError:
-                pass
+        def logf(x):
+            self.logger.info(x)
 
-        asyncio.run(run())
+        logger_coroutine = log_stream(multiPoolStream.run(), timeout=11, logger_fun=logf)
+        asyncio.run(logger_coroutine)
