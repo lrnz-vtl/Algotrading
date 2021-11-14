@@ -1,8 +1,9 @@
 import unittest
 import logging
-from stream.marketstream import PoolStream, PriceAggregator
+from stream.marketstream import PoolStream, MultiPoolStream
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
+from asyncio.exceptions import TimeoutError
 
 
 class TestStream(unittest.TestCase):
@@ -18,22 +19,38 @@ class TestStream(unittest.TestCase):
 
         client = TinymanMainnetClient()
 
-        logf = lambda x: self.logger.info(x)
+        poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, log_interval=5, sample_interval=1)
 
-        class Counter:
-            def __init__(self):
-                self.n = 11
+        async def run():
+            async def foo():
+                async for x in poolStream.run():
+                    self.logger.info(x)
 
-            def keep_running(self):
-                self.n -= 1
-                if self.n > 0:
-                    return True
-                return False
+            try:
+                await asyncio.wait_for(foo(), timeout=11)
+            except TimeoutError:
+                pass
 
-        c = Counter()
+        asyncio.run(run())
 
-        aggregator = PriceAggregator(logf, log_interval=5)
+    def test_pools(self):
+        assetPairs = [
+            (0, 226701642),
+            (0, 27165954)
+        ]
 
-        poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, aggregator=aggregator, sample_interval=1,
-                                keep_running=lambda: c.keep_running())
-        asyncio.run(poolStream.run())
+        client = TinymanMainnetClient()
+
+        multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client,
+                                          sample_interval=1, log_interval=5, timeout=11)
+
+        async def run():
+            async def foo():
+                async for x in multiPoolStream.run():
+                    self.logger.info(x)
+            try:
+                await asyncio.wait_for(foo(), timeout=11)
+            except TimeoutError:
+                pass
+
+        asyncio.run(run())
