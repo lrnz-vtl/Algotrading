@@ -7,9 +7,13 @@ import asyncio
 
 class TestStream(unittest.TestCase):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, filename = None, *args, **kwargs):
         logging.basicConfig(level=logging.NOTSET)
         self.logger = logging.getLogger("TestStream")
+        if filename:
+            fh = logging.FileHandler(filename)
+            fh.setLevel(logging.INFO)
+            self.logger.addHandler(fh)
         super().__init__(*args, **kwargs)
 
     def test_pool(self):
@@ -18,7 +22,10 @@ class TestStream(unittest.TestCase):
 
         client = TinymanMainnetClient()
 
-        poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, log_interval=5, sample_interval=1)
+        samplingLogger = logging.getLogger("SamplingLogger")
+        samplingLogger.setLevel(logging.DEBUG)
+
+        poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, log_interval=5, sample_interval=1, logger=samplingLogger)
 
         def logf(x):
             self.logger.info(x)

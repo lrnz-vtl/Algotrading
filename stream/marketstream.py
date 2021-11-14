@@ -1,5 +1,5 @@
 from tinyman.v1.client import TinymanClient
-from utils.timestamp import Timestamp
+from tools.timestamp import Timestamp
 from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
 import asyncio
 from aiostream import stream

@@ -1,6 +1,6 @@
 from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
 from tinyman.v1.optin import prepare_asset_optin_transactions
-from utils.timestamp import Timestamp
+from tools.timestamp import Timestamp
 from trade_logger.base import TradeLogger, TradeLog, TradeInfo
 from logging import Logger
 

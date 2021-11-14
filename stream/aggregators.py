@@ -1,6 +1,6 @@
 from datetime import datetime
 from tinyman.v1.pools import Pool
-from utils.timestamp import Timestamp
+from tools.timestamp import Timestamp
 from datetime import timezone, timedelta
 from typing import Optional, Tuple, Generator
 import numpy as np
