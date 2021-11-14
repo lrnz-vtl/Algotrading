@@ -3,9 +3,10 @@ from tools.timestamp import Timestamp
 from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
 import asyncio
 from aiostream import stream
-from stream.aggregators import aggregatePrice
+from stream.aggregators import aggregatePrice, AveragePrice
 from logging import Logger
 from asyncio.exceptions import TimeoutError
+from dataclasses import dataclass
 
 
 class PoolStream:
@@ -35,12 +36,20 @@ class PoolStream:
             if self.logger is not None:
                 self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
 
-            row = self.aggregate.send((time, pool))
+            maybeRow: Optional[AveragePrice] = self.aggregate.send((time, pool))
 
-            if row:
-                yield row
+            if maybeRow:
+                yield maybeRow
 
             await asyncio.sleep(self.sample_interval)
+
+
+@dataclass
+class Row:
+    asset1: int
+    asset2: int
+    timestamp: Timestamp
+    price: float
 
 
 class MultiPoolStream:
@@ -59,9 +68,9 @@ class MultiPoolStream:
 
     async def run(self):
 
-        async def withPairInfo(assetPair, poolStream):
+        async def withPairInfo(assetPair, poolStream: PoolStream):
             async for x in poolStream.run():
-                yield assetPair, x
+                yield Row(asset1=assetPair[0], asset2=assetPair[1], timestamp=x.timestamp, price=x.price)
 
         async_generators = [withPairInfo(assetPair, poolStream) for (assetPair, poolStream) in
                             zip(self.assetPairs, self.poolStreams)]
