@@ -11,7 +11,7 @@ from asyncio.exceptions import TimeoutError
 class PoolStream:
 
     def __init__(self, asset1, asset2, client: TinymanClient,
-                 logger: Logger,
+                 logger: Logger = None,
                  sample_interval: int = 5,
                  log_interval: int = 60,
                  log_info: str = None
@@ -32,7 +32,8 @@ class PoolStream:
             pool = self.client.fetch_pool(self.asset1, self.asset2)
             time = Timestamp.get()
 
-            self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
+            if self.logger is not None:
+                self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
 
             row = self.aggregate.send((time, pool))
 
