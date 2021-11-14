@@ -1,10 +1,10 @@
 import pandas as pd
-from tinydata import TinyData
+from tinychart_data import tinydata
 from assets import assets, get_name
 from time import perf_counter
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Iterable, Tuple
+from typing import Dict
 import collections
 
 
@@ -54,7 +54,6 @@ class DataStore(collections.Mapping):
     def __init__(self):
         """Set up the data store"""
         self.data: Dict[int, AssetData] = {}
-        self.scraper = TinyData()
         self.update()
 
     def update_fast(self):
@@ -70,8 +69,8 @@ class DataStore(collections.Mapping):
         with catchtime() as t:
             for asset_id in assets:
                 n, _ = get_name(asset_id)
-                price = self.scraper.processed_price_data(asset_id)
-                summary = self.scraper.asset_summary(asset_id)
+                price = tinydata.processed_price_data(asset_id)
+                summary = tinydata.asset_summary(asset_id)
 
                 slow = SlowData(price=price, summary=summary)
                 self.data[asset_id] = AssetData(slow=slow, fast=fastData[asset_id])
@@ -83,7 +82,7 @@ class DataStore(collections.Mapping):
         fastData = {}
 
         with catchtime() as t:
-            instant_prices = self.scraper.all_prices()
+            instant_prices = tinydata.all_prices()
 
         for asset_id in assets:
             fastData[asset_id] = FastData(instant_prices['assets'][str(asset_id)])

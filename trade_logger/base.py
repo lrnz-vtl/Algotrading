@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
 from tinyman.v1.pools import SwapQuote
+from utils.timestamp import Timestamp
 
 
 @dataclass
@@ -17,9 +17,8 @@ class TradeInfo:
 
 @dataclass
 class TradeLog:
+    timestamp: Timestamp
     tradeInfo: TradeInfo
-    now: datetime
-    utcnow: datetime
 
 
 class TradeLogger(ABC):

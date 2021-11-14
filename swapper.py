@@ -1,7 +1,6 @@
 from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
 from tinyman.v1.optin import prepare_asset_optin_transactions
-from datetime import datetime, timezone
-import time as _time
+from utils.timestamp import Timestamp
 from trade_logger.base import TradeLogger, TradeLog, TradeInfo
 from logging import Logger
 
@@ -109,9 +108,4 @@ class Swapper:
             self.logger.info("Trade canceled because quote.price_with_slippage <= target_price")
 
     def log_trade(self, tradeInfo: TradeInfo):
-        # TODO make these calls happen at the same exact time somehow
-        t = _time.time()
-        now = datetime.fromtimestamp(t)
-        utcnow = datetime.fromtimestamp(t, timezone.utc)
-
-        self.tradeLogger.log(TradeLog(tradeInfo=tradeInfo, now=now, utcnow=utcnow))
+        self.tradeLogger.log(TradeLog(tradeInfo=tradeInfo, timestamp=Timestamp.get()))

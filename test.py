@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import time, asyncio
+import asyncio
 from daemon import runner
 
-from datastore import DataStore
+from tinychart_data.datastore import DataStore
 from assets import assets
-from strategies import StrategyStupid
+from strategy.strategies import StrategyStupid
 from wallets import Portfolio
 
 async def update_fast(ds):

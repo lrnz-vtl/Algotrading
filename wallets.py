@@ -1,8 +1,5 @@
-import requests, pprint
-import pandas as pd
-import numpy as np
+import requests
 from typing import Dict, Iterable, Tuple
-from tinydata import TinyData
 
 
 def get_asset_data(asset_id, testnet=False):

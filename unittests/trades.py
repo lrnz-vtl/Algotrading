@@ -39,4 +39,5 @@ class TestSwapper(unittest.TestCase):
         asset2 = 10458941
         client = TinymanTestnetClient()
         pool = client.fetch_pool(asset2, asset1)
+        state = pool.fetch_state()
         self.logger.info(pool)

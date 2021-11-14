@@ -8,7 +8,7 @@ class TextLogger(TradeLogger):
     Crappy logger
     '''
 
-    def __init__(self, fname:str):
+    def __init__(self, fname: str):
         self.fname = fname
         Path(fname).touch()
 
