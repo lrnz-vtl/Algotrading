@@ -34,7 +34,10 @@ class TestStream(unittest.TestCase):
 
         client = TinymanMainnetClient()
 
-        multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client, sample_interval=1, log_interval=5)
+        samplingLogger = logging.getLogger("SamplingLogger")
+        samplingLogger.setLevel(logging.DEBUG)
+
+        multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client, sample_interval=1, log_interval=5, logger=samplingLogger)
 
         def logf(x):
             self.logger.info(x)

@@ -28,7 +28,7 @@ def time_bucket(utcnow, log_interval):
     return utcnow - delta
 
 
-def aggregatePrice(bucket_delta: int = 60 * 5) -> Generator[Tuple[datetime, float], Tuple[Timestamp, Pool], None]:
+def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[Tuple[datetime, float], Tuple[Timestamp, Pool], None]:
     """
     Very basic time-average price aggregator
     """
@@ -49,6 +49,8 @@ def aggregatePrice(bucket_delta: int = 60 * 5) -> Generator[Tuple[datetime, floa
 
             if t0 != t1:
                 yield t0, mean.value()
+                if logger is not None:
+                    logger.debug(f"Number of samples: {mean.n}")
                 mean = RunningMean()
         else:
             mean = RunningMean()

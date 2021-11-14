@@ -4,20 +4,26 @@ from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
 import asyncio
 from aiostream import stream
 from stream.aggregators import aggregatePrice
+from logging import Logger
 from asyncio.exceptions import TimeoutError
 
 
 class PoolStream:
 
     def __init__(self, asset1, asset2, client: TinymanClient,
+                 logger: Logger,
                  sample_interval: int = 5,
-                 log_interval: int = 60):
+                 log_interval: int = 60,
+                 log_info: str = None
+                 ):
 
-        self.aggregate = aggregatePrice(log_interval)
+        self.log_info = log_info
+        self.aggregate = aggregatePrice(log_interval, logger=logger)
         self.sample_interval = sample_interval
         self.asset1 = asset1
         self.asset2 = asset2
         self.client = client
+        self.logger = logger
 
     async def run(self):
         next(self.aggregate)
@@ -25,6 +31,8 @@ class PoolStream:
         while True:
             pool = self.client.fetch_pool(self.asset1, self.asset2)
             time = Timestamp.get()
+
+            self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
 
             row = self.aggregate.send((time, pool))
 
@@ -37,13 +45,15 @@ class PoolStream:
 class MultiPoolStream:
 
     def __init__(self, assetPairs: Iterable[Tuple[int, int]], client: TinymanClient,
+                 logger: Logger,
                  sample_interval: int = 5,
-                 log_interval: int = 60 * 5):
+                 log_interval: int = 60 * 5
+                 ):
 
         self.assetPairs = assetPairs
         self.poolStreams = [
             PoolStream(asset1=pair[0], asset2=pair[1], client=client, sample_interval=sample_interval,
-                       log_interval=log_interval) for pair in assetPairs
+                       log_interval=log_interval, logger=logger, log_info=str(pair)) for pair in assetPairs
         ]
 
     async def run(self):
