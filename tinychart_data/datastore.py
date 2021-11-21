@@ -26,8 +26,9 @@ class SlowData:
     price_history: pd.Series
 
     def __init__(self, price, summary):
-        for key in ['total_usd_reserves', 'supply', 'circulating_supply',
-                    'decimals', 'volatility', 'change24h', 'transactions']:
+        # for key in ['total_usd_reserves', 'supply', 'circulating_supply',
+        #             'decimals', 'volatility', 'change24h', 'transactions']:
+        for key in ['supply', 'circulating_supply', 'decimals', 'transactions']:
             setattr(self, key, summary[key])
 
         self.price_history = price

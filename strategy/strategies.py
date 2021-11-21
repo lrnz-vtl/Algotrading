@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from swapper import Swapper
-from wallets import Portfolio        
-        
+from wallets import Portfolio
+from strategy.analysis import AnalyticProvider
+
 class Strategy(ABC):
     @abstractmethod
     def assign_portfolio(self, ds, pf):
@@ -11,20 +12,16 @@ class Strategy(ABC):
     def rebalance_portfolio(self, ds, pf):
         pass
 
-class StrategyStupid(Strategy):
-    """Find asset with largest price drop in last hour"""
+class SimpleStrategyEMA(Strategy):
+    """Simple strategy based on monitoring of EMA"""
 
-    def __init__(self, stoploss, maxswap):
-        self.stoploss = stoploss
-        self.maxswap = maxswap
+    def __init__(self, analytic_provider, portfolio, time_long=10000, time_short=1000):
+        self.analytic_provider = AnalyticProvider(time_long, time_short)
+        self.portfolio = portfolio
 
-    def assign_portfolio(self, ds, pf):
+    def assign_portfolio(self, pf):
         """Return list of tuples with coins to long"""
         pass
-        # # find coin whose priced dropped the most in past hour
-        # asset = min(ds.data, key = lambda d : ds[d].fast.price_last-ds[d].fast.price1h_last)
-        # # YOLO into it
-        # pf.swap(0, asset, self.available_coins[0]*self.maxswap, ds[asset].fast.price_last)
     
     def rebalance_portfolio(self, ds, pf):
         """Sell of coins that have been positive in the past hour"""
