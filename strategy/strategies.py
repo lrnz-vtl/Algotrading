@@ -15,22 +15,37 @@ class Strategy(ABC):
 class SimpleStrategyEMA(Strategy):
     """Simple strategy based on monitoring of EMA"""
 
-    def __init__(self, analytic_provider, portfolio, time_long=10000, time_short=1000):
+    def __init__(self, analytic_provider, maxfrac = 0.1, time_long=10000, time_short=1000):
         self.analytic_provider = AnalyticProvider(time_long, time_short)
-        self.portfolio = portfolio
-
-    def assign_portfolio(self, pf):
+        #self.swapper = Swapper(address, private_key, logger=logging.getLogger("Swapper"), trade_logger=TextLogger("log.txt"))
+        #self.portfolio = Portfolio(address)
+        self.maxfrac = 0.1
+        self.holdings = {}
+        
+    def rebalance_portfolio(self):
         """Return list of tuples with coins to long"""
+        for assetid in self.analytic_provider.expavg_long:
+            diff = self.analytic_provider.expavg_long[assetid]-self.analytic_provider.expavg_short[assetid]
+            # if difference becomes negative and was previously positive, buy coin, and vice vera
+            if (diff[-1]<0):
+                if (assetid in self.holdings and self.holdings[assetid]==True):
+                    continue
+                else:
+                    self.buy(assetid)
+            if (diff[-1]>0):
+                if (assetid in self.holdings and self.holdings[assetid]==False):
+                    continue
+                else:
+                    self.sell(assetid)
+
+    def sell(self, assetid):
+        """Sell assetid"""
+        #quantity = self.portfolio[assetid]
+        #self.swapper.swap(assetid, 0, quantity, 0)
         pass
-    
-    def rebalance_portfolio(self, ds, pf):
-        """Sell of coins that have been positive in the past hour"""
+
+    def buy(self, assetid):
+        """Buy assetid"""
+        #quantity = self.portfolio[0]*self.maxfrac
+        #self.swapper.swap(0, assetid, quantity, 0)
         pass
-        # for asset in data:
-        #     if self.available_coins[asset]==0:
-        #         continue
-        #     if (ds[asset].fast.price_last > ds[asset].fast.price1h_last):
-        #         pf.swap(asset, 0, self.available_coins[asset], 1/ds[asset].fast.price_last)
-        #     # cut our losses if it dropped too much
-        #     if (ds[asset].fast.price_last < self.stoploss*self.average_price[asset]):
-        #         pf.swap(asset, 0, self.available_coins[asset], 1/ds[asset].fast.price_last)

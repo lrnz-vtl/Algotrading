@@ -5,7 +5,7 @@ from daemon import runner
 
 from tinychart_data.datastore import DataStore
 from assets import assets
-from strategy.strategies import StrategyStupid
+from strategy.strategies import SimpleStrategyEMA
 from wallets import Portfolio
 
 async def update_fast(ds):
@@ -36,14 +36,15 @@ class App():
         self.pidfile_timeout = 5
     def run(self):
         ds = DataStore()
-        strat = StrategyStupid(0.8, 0.4)
+        ap = AnalyticProvider(ds, 10000, 1000)
+        strat = SimpleStrategyEMA(ap)
         pf = Portfolio(10, assets) # value needs to be loaded from wallet
         
         loop = asyncio.get_event_loop()
         tasks = [
             loop.create_task(update_fast(ds)),
             loop.create_task(update_slow(ds)),
-            loop.create_task(run_strategy(strat, ds, pf)),
+            loop.create_task(run_strategy(strat, pf)),
         ]
         loop.run_until_complete(asyncio.wait(tasks))
         loop.close()
