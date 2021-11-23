@@ -1,29 +1,35 @@
 import unittest
 import logging
 from stream.marketstream import PoolStream, MultiPoolStream, log_stream
+from stream import sqlite
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
+import uuid
+from contextlib import closing
+import os
 
 
 class TestStream(unittest.TestCase):
 
-    def __init__(self, filename = None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         logging.basicConfig(level=logging.NOTSET)
         self.logger = logging.getLogger("TestStream")
+
+        filename = kwargs.get('filename')
         if filename:
             fh = logging.FileHandler(filename)
             fh.setLevel(logging.INFO)
             self.logger.addHandler(fh)
         super().__init__(*args, **kwargs)
 
-    def test_pool(self, timeout=11, sample_interval=1, log_interval=5):
+    def test_pool(self):
         asset1 = 0
         asset2 = 226701642
 
         client = TinymanMainnetClient()
 
         samplingLogger = logging.getLogger("SamplingLogger")
-        samplingLogger.setLevel(logging.DEBUG)
+        samplingLogger.setLevel(logging.FATAL)
 
         poolStream = PoolStream(asset1=asset1, asset2=asset2, client=client, log_interval=log_interval,
                                 sample_interval=sample_interval, logger=samplingLogger)
@@ -41,36 +47,31 @@ class TestStream(unittest.TestCase):
             (0, 230946361),
             (0, 287867876),
             (0, 384303832),
-            
-            (0, 378382099),
-            (0, 2751733),
-            (0, 300208676),
-            (0, 137594422),
-            (0, 163650),
-
-            (0, 359487296),
-            (0, 400758048),
-            (0, 404044168),
-            (0, 297995609),
-            (0, 361671874),
-            
-            (0, 137020565),
-            (0, 406383570),
-            (0, 241759159),
-            (0, 400593267),
-            (0, 283820866)
         ]
 
         client = TinymanMainnetClient()
 
         samplingLogger = logging.getLogger("SamplingLogger")
-        samplingLogger.setLevel(logging.DEBUG)
+        samplingLogger.setLevel(logging.FATAL)
 
         multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client, sample_interval=sample_interval,
                                           log_interval=log_interval, logger=samplingLogger)
 
-        def logf(x):
-            self.logger.info(x)
+        dbfname = f'/tmp/{str(uuid.uuid4())}.db'
 
-        logger_coroutine = log_stream(multiPoolStream.run(), timeout=timeout, logger_fun=logf)
-        asyncio.run(logger_coroutine)
+        # def logf(x):
+        #     self.logger.info(x)
+
+        with sqlite.MarketSqliteLogger(dbfile=dbfname) as marketLogger:
+
+            marketLogger.create_table()
+            logf = lambda x: marketLogger.log(x)
+
+            logger_coroutine = log_stream(multiPoolStream.run(), timeout=timeout, logger_fun=logf)
+            asyncio.run(logger_coroutine)
+
+            with closing(marketLogger.con.cursor()) as c:
+                c.execute(f"select * from {marketLogger.tablename}")
+                self.logger.info(c.fetchall())
+
+        os.remove(dbfname)

@@ -4,6 +4,7 @@ from tools.timestamp import Timestamp
 from datetime import timezone, timedelta
 from typing import Optional, Tuple, Generator
 import numpy as np
+from dataclasses import dataclass
 
 
 class RunningMean:
@@ -22,13 +23,19 @@ class RunningMean:
         return self.x / self.n
 
 
-def time_bucket(utcnow, log_interval):
-    time = (utcnow - datetime(1970, 1, 1, tzinfo=timezone.utc))
+def time_bucket(timestamp: Timestamp, log_interval):
+    time = (timestamp.utcnow - datetime(1970, 1, 1, tzinfo=timezone.utc))
     delta = timedelta(seconds=time.total_seconds() % log_interval)
-    return utcnow - delta
+    return Timestamp(utcnow=timestamp.utcnow - delta, now=timestamp.now - delta)
 
 
-def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[Tuple[datetime, float], Tuple[Timestamp, Pool], None]:
+@dataclass
+class AveragePrice:
+    timestamp: Timestamp
+    price: float
+
+
+def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[AveragePrice, Tuple[Timestamp, Pool], None]:
     """
     Very basic time-average price aggregator
     """
@@ -39,16 +46,18 @@ def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[Tuple[d
 
     while True:
         t, pool = (yield)
+        t: Timestamp
+        pool: Pool
 
         # Price of buying infinitesimal amount of asset2 in units of asset1, excluding transaction costs
         price = pool.asset1_reserves / pool.asset2_reserves
 
         if mean is not None:
-            t0 = time_bucket(time.utcnow, bucket_delta)
-            t1 = time_bucket(t.utcnow, bucket_delta)
+            t0 = time_bucket(time, bucket_delta)
+            t1 = time_bucket(t, bucket_delta)
 
-            if t0 != t1:
-                yield t0, mean.value()
+            if t0.utcnow != t1.utcnow:
+                yield AveragePrice(timestamp=t0, price=mean.value())
                 if logger is not None:
                     logger.debug(f"Number of samples: {mean.n}")
                 mean = RunningMean()
