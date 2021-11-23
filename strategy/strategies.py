@@ -31,11 +31,13 @@ class SimpleStrategyEMA(Strategy):
                 if (assetid in self.holdings and self.holdings[assetid]==True):
                     continue
                 else:
+                    self.holdings[assetid]=True
                     self.buy(assetid)
             if (diff[-1]>0):
                 if (assetid in self.holdings and self.holdings[assetid]==False):
                     continue
                 else:
+                    self.holdings[assetid]=False
                     self.sell(assetid)
 
     def sell(self, assetid):
