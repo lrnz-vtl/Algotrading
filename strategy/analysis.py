@@ -1,4 +1,4 @@
-from analysis.timeseries import exp_average
+from strategy.timeseries import exp_average
 
 class AnalyticProvider:
     def __init__(self, datastore, time_scale_long=10000, time_scale_short=1000):
@@ -13,7 +13,7 @@ class AnalyticProvider:
     def update(self):
         """Using current datastore state, compute relevant metrics"""
         for assetid in self.datastore:
-            price=self.datastore[assetit].slow.price_history['price']
+            price=self.datastore[assetid].slow.price_history['price']
             #time=self.datastore[assetid].slow.price_history.index.view(np.int64).astype(float)/10**9
             self.expavg_long[assetid]=exp_average(price,self.time_scale_long)
             self.expavg_short[assetid]=exp_average(price,self.time_scale_short)

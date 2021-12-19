@@ -50,7 +50,15 @@ class Swapper:
             txn_group.sign_with_private_key(self.address, self.private_key)
             result = self.client.submit(txn_group, wait=True)
 
-
+    def price(asset1_id, asset2_id, quantity):
+        asset1 = self.client.fetch_asset(asset1_id)  # ALGO
+        asset2 = self.client.fetch_asset(asset2_id)  # USDC
+        # Fetch the pool we will work with
+        pool = self.client.fetch_pool(asset2, asset1, quantity)
+        # Get a quote for a swap of 1 asset1 to asset2 with given slippage tolerance
+        quote = pool.fetch_fixed_input_swap_quote(asset1(quantity), slippage=slippage)
+        return quote.price
+            
     def swap(self, asset1_id, asset2_id, quantity, target_price,
              slippage=0.01, excess_min=0.01, skip_optin=False):
         """Swap a given quantity asset1 for asset2 if its value is above target_price."""
