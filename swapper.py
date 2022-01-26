@@ -80,6 +80,7 @@ class Swapper:
         self.logger.info(f"Got quote: {quote}")
         self.logger.info(f"quote.price_with_slippage = {quote.price_with_slippage}")
 
+        total_amount_out=None
         # We only want to sell if asset1 is > target_price*asset2
         if quote.price_with_slippage > target_price:
             self.logger.info(f'Swapping {quote.amount_in} to {quote.amount_out_with_slippage}')
@@ -89,7 +90,11 @@ class Swapper:
             transaction_group.sign_with_private_key(self.address, self.private_key)
             # Submit transactions to the network and wait for confirmation
             result = self.client.submit(transaction_group, wait=True)
-
+            print(transaction_group.transactions)
+            try:
+                total_amount_out = transaction_group.transactions[3].amount
+            except:
+                total_amount_out = transaction_group.transactions[3].amt
             tradeInfo = TradeInfo(asset1_id=asset1_id,
                                   asset2_id=asset2_id,
                                   quantity=quantity,
@@ -111,9 +116,20 @@ class Swapper:
                     transaction_group = pool.prepare_redeem_transactions(amount)
                     transaction_group.sign_with_private_key(self.address, self.private_key)
                     result = self.client.submit(transaction_group, wait=True)
+                    print(transaction_group.transactions)
+                    try:
+                        total_amount_out+=transaction_group.transactions[2].amount
+                    except:
+                        total_amount_out+=transaction_group.transactions[2].amt
+            print('Transaction',asset1(quantity),' to ',quote.amount_out.amount,'returned:',total_amount_out)
+            return total_amount_out
 
         else:
             self.logger.info("Trade canceled because quote.price_with_slippage <= target_price")
+            return None
 
     def log_trade(self, tradeInfo: TradeInfo):
-        self.tradeLogger.log(TradeLog(tradeInfo=tradeInfo, timestamp=Timestamp.get()))
+        try:
+            self.tradeLogger.log(TradeLog(tradeInfo=tradeInfo, timestamp=Timestamp.get()))
+        except:
+            pass

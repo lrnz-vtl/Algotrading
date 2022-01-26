@@ -5,13 +5,15 @@ import logging
 from daemon import runner
 
 from tinychart_data.datastore import DataStore
-from assets import assets
-from strategy.strategies import SimpleStrategyEMA
-from strategy.analysis import AnalyticProvider
-from trading.tradingengine import TradingEngine
+from assets import assets, all_pairs, find_pools
+from strategy.strategies import SimpleStrategyEMA, StrategyArbitrage
+from strategy.analysis import AnalyticProvider, PoolGraph
+from trading.tradingengine import TradingEngineEMA,TradingEngineArbitrage
+from keys import address, private_key
 from wallets import Portfolio
 from swapper import Swapper
 from trade_logger.text import TextLogger
+from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
 import assets
 
 async def update_fast(ds):
@@ -26,11 +28,25 @@ async def update_slow(ds):
         await asyncio.sleep(900)
         ds.update()
 
+async def update_graph(ap):
+    # async def 
+    print('Continuously updating graph')
+    async for row in ap.mps.run():
+        ap.graph[row.asset1][row.asset2]['price']=row.price
+        ap.graph[row.asset1][row.asset2]['asset1_reserves']=row.asset1_reserves
+        ap.graph[row.asset1][row.asset2]['asset2_reserves']=row.asset2_reserves
+        ap.graph[row.asset1][row.asset2]['asset1']=row.asset1
+        ap.graph[row.asset1][row.asset2]['asset2']=row.asset2
+        #print(row)
+        await asyncio.sleep(0.05)
+    #await ap.run()
+
 async def run_trading(engine):
     print(f'Running trading engine every {engine.trading_scale/60:.2f} min.')
     while True:
+        await asyncio.sleep(engine.trading_scale)
+        print('\nStarting trading step\n')
         engine.trading_step()
-        await asynchio.sleep(engine.trading_scale)
 # async def run_strategy(strat, ds, pf):
 #     print('Running strategies every 10 sec.')
 #     while True:
@@ -39,10 +55,14 @@ async def run_trading(engine):
 #         await asyncio.sleep(10)
 
 class App():
-    def __init__(self, address, private_key, testnet=False):
+    def __init__(self, address, private_key, analytic_provider, strategy, trading_class, testnet=False):
+        self.analytic_provider = analytic_provider
+        self.strategy = strategy
+        self.trading_engine = trading_class
         self.logger = logging.getLogger('trading')
         self.testnet = testnet
-        self.swapper = Swapper(address, private_key, TextLogger('trade_logger'), self.logger, False)
+        tradelogger = TextLogger('trade_logs.txt')
+        self.swapper = Swapper(address, private_key, tradelogger, self.logger, False)
         self.stdin_path = '/dev/null'
         self.stdout_path = '/dev/tty'
         self.stderr_path =  '/dev/tty'
@@ -50,22 +70,41 @@ class App():
         self.pidfile_timeout = 5
         
     def run(self):
-        ds = DataStore()
-        ap = AnalyticProvider(ds, 10000, 1000)
-        strat = SimpleStrategyEMA(ap)
         pf = Portfolio(address, self.testnet)
-        te = TradingEngine(strat, pf, self.swapper, assets.assets)
+        te = self.trading_engine(self.strategy, pf, 8_000_000, self.swapper)
         loop = asyncio.get_event_loop()
-        tasks = [
-            loop.create_task(update_fast(ds)),
-            loop.create_task(update_slow(ds)),
-            loop.create_task(run_trading(te)),
-        ]
-        loop.run_until_complete(asyncio.wait(tasks))
+        # tasks = [
+        #     loop.create_task(update_graph(self.analytic_provider)),
+        #     loop.create_task(run_trading(te)),
+        # ]
+        # tasks = [
+        #     loop.create_task(update_fast(ds)),
+        #     loop.create_task(update_slow(ds)),
+        #     loop.create_task(run_trading(te)),
+        # ]
+        # loop.run_until_complete(asyncio.wait(tasks))
+        
+        loop.create_task(update_graph(self.analytic_provider))
+        loop.create_task(run_trading(te))
+        loop.run_forever()
         loop.close()
-private_key='Bjf++sgdvSP8y1pSgzyfjYwKmROwYmsRh2+ipE0UF6sTsAHCfBeCZ5okgUFOqqOu7ilPFCTlDUz24cDqd73D9Q=='
-address='COYADQT4C6BGPGREQFAU5KVDV3XCSTYUETSQ2THW4HAOU555YP2S3AHALE'
 
-app = App(address, private_key)
+
+testnet=False
+
+# ds = DataStore()
+# ap = AnalyticProvider(ds, 10000, 1000)
+# app = App(address, private_key, strategy_class=SimpleStrategyEMA, trading_class=TradingEngineEMA)
+samplingLogger = logging.getLogger("SamplingLogger")
+
+#pools = all_pairs
+pools = find_pools()
+ap = PoolGraph(assetPairs=pools,
+               client=TinymanTestnetClient() if testnet else TinymanMainnetClient(),
+               num_trades=50,logger=samplingLogger, sample_interval=10, log_interval=50)
+strat = StrategyArbitrage(ap, gain_threshold=1.012)
+
+print(f'Starting a trading strategy with {len(pools)} pools')
+app = App(address, private_key, analytic_provider=ap, strategy=strat, trading_class=TradingEngineArbitrage)
 daemon_runner = runner.DaemonRunner(app)
 daemon_runner.do_action()

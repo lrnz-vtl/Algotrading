@@ -36,7 +36,7 @@ class PoolStream:
             if self.logger is not None:
                 self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
 
-            maybeRow: Optional[AveragePrice] = self.aggregate.send((time, pool))
+            maybeRow: Optional[AveragePrice] = self.aggregate.send((time, pool, self.asset1, self.asset2))
 
             if maybeRow:
                 yield maybeRow
@@ -50,6 +50,8 @@ class Row:
     asset2: int
     timestamp: Timestamp
     price: float
+    asset1_reserves: int
+    asset2_reserves: int
 
 
 class MultiPoolStream:
@@ -70,7 +72,8 @@ class MultiPoolStream:
 
         async def withPairInfo(assetPair, poolStream: PoolStream):
             async for x in poolStream.run():
-                yield Row(asset1=assetPair[0], asset2=assetPair[1], timestamp=x.timestamp, price=x.price)
+                yield Row(asset1=assetPair[0], asset2=assetPair[1], timestamp=x.timestamp, price=x.price,
+                          asset1_reserves = x.asset1_reserves, asset2_reserves = x.asset2_reserves)
 
         async_generators = [withPairInfo(assetPair, poolStream) for (assetPair, poolStream) in
                             zip(self.assetPairs, self.poolStreams)]
