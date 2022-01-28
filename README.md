@@ -7,11 +7,21 @@ To run this code requires:
 - tinyman.py.sdk https://github.com/tinymanorg/tinyman-py-sdk
 - py-algorand-sdk https://py-algorand-sdk.readthedocs.io
 
-Install these python3 packages with
+These packages could be installed separately as
 ```
 pip install git+https://github.com/tinymanorg/tinyman-py-sdk.git
 pip install py-algorand-sdk
 ```
+
+For the complete installation, the python version is 3.10.0. 
+The easiest is to install miniconda, create am environment and install the packages:
+```
+conda create --name Algotrading python=3.10.0
+conda activate Algotrading
+pip install -r requirements.txt
+```
+
+
 
 ## Conceptual framework
 
