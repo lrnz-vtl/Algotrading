@@ -7,11 +7,18 @@ To run this code requires:
 - tinyman.py.sdk https://github.com/tinymanorg/tinyman-py-sdk
 - py-algorand-sdk https://py-algorand-sdk.readthedocs.io
 
-Install these python3 packages with
+These packages could be installed separately as
 ```
 pip install git+https://github.com/tinymanorg/tinyman-py-sdk.git
 pip install py-algorand-sdk
 ```
+
+For the complete installation, the python version is 3.10.0. Install it in a new virtual environment, activate it, the install the packages
+```
+pip install -r requirements.txt
+```
+
+
 
 ## Conceptual framework
 
@@ -27,3 +34,15 @@ So the components we need for the framework to work are the following:
 - A pricing function that tells us the best estimate for the future value of any  position (this takes into account all the forecasts, and also should accurately estimate all the future transaction costs of offloading all the other coins to c0 (by finding the "least cost" paths through the graphs))
 - An optimisation engine that finds the most valuable position we can achieve (take into account forecasts etc.)
 - An execution engine which realises that position. Perhaps this should also exploit any immediate arbitrages whenever they are present, because they are probably very short-lived.
+python==3.10.0
+arrow==1.2.1
+asyncio==3.4.3
+matplotlib==3.5.1
+numpy==1.21.5
+pandas==1.3.5
+py-algorand-sdk==1.8.0
+python-dateutil==2.8.2
+pytz==2021.3
+requests==2.26.0
+tinyman-py-sdk @ git+https://github.com/tinymanorg/tinyman-py-sdk.git@d36a9c1b5f8f69a8a24b780fdab3e0afb1d76d72
+urllib3==1.26.7
