@@ -36,7 +36,8 @@ class AveragePrice:
     asset1_reserves: int
     asset2_reserves: int
 
-def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[AveragePrice, Tuple[Timestamp, Pool], None]:
+
+def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[AveragePrice, Tuple[Timestamp, Pool, int, int], None]:
     """
     Very basic time-average price aggregator
     """
@@ -57,9 +58,9 @@ def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[Average
             price = pool.asset2_reserves / pool.asset1_reserves
             asset1_reserves = pool.asset1_reserves
             asset2_reserves = pool.asset2_reserves
-            if (a1 == pool.asset2.id):
+            if a1 == pool.asset2.id:
                 asset1_reserves, asset2_reserves = asset2_reserves, asset1_reserves
-                price = 1.0/price
+                price = 1.0 / price
         except ZeroDivisionError:
             price = np.nan
             asset1_reserves = np.nan
