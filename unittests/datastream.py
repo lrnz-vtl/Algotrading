@@ -22,7 +22,7 @@ class TestStream(unittest.TestCase):
             self.logger.addHandler(fh)
         super().__init__(*args, **kwargs)
 
-    def test_pool(self):
+    def test_pool(self, timeout=11, sample_interval=1, log_interval=5):
         asset1 = 0
         asset2 = 226701642
 
@@ -59,12 +59,9 @@ class TestStream(unittest.TestCase):
 
         dbfname = f'/tmp/{str(uuid.uuid4())}.db'
 
-        # def logf(x):
-        #     self.logger.info(x)
-
         with sqlite.MarketSqliteLogger(dbfile=dbfname) as marketLogger:
 
-            marketLogger.create_table()
+            marketLogger.create_table(ignore_existing=True)
             logf = lambda x: marketLogger.log(x)
 
             logger_coroutine = log_stream(multiPoolStream.run(), timeout=timeout, logger_fun=logf)
@@ -72,6 +69,7 @@ class TestStream(unittest.TestCase):
 
             with closing(marketLogger.con.cursor()) as c:
                 c.execute(f"select * from {marketLogger.tablename}")
-                self.logger.info(c.fetchall())
+                for x in c.fetchall():
+                    self.logger.info(x)
 
         os.remove(dbfname)
