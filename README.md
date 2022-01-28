@@ -13,8 +13,11 @@ pip install git+https://github.com/tinymanorg/tinyman-py-sdk.git
 pip install py-algorand-sdk
 ```
 
-For the complete installation, the python version is 3.10.0. Install it in a new virtual environment, activate it, the install the packages
+For the complete installation, the python version is 3.10.0. 
+The easiest is to install miniconda, create am environment and install the packages:
 ```
+conda create --name Algotrading python=3.10.0
+conda activate Algotrading
 pip install -r requirements.txt
 ```
 
