@@ -1,5 +1,5 @@
 import sqlite3
-from stream import marketstream
+from algo.stream import marketstream
 from contextlib import closing
 import arrow
 

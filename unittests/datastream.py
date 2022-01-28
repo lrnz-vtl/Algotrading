@@ -1,7 +1,7 @@
 import unittest
 import logging
-from stream.marketstream import PoolStream, MultiPoolStream, log_stream
-from stream import sqlite
+from algo.stream.marketstream import PoolStream, MultiPoolStream, log_stream
+from algo.stream import sqlite
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
 import uuid

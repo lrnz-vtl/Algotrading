@@ -1,9 +1,9 @@
 from tinyman.v1.client import TinymanClient
-from tools.timestamp import Timestamp
+from algo.tools.timestamp import Timestamp
 from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
 import asyncio
 from aiostream import stream
-from stream.aggregators import aggregatePrice, AveragePrice
+from algo.stream.aggregators import aggregatePrice, AveragePrice
 from logging import Logger
 from asyncio.exceptions import TimeoutError
 from dataclasses import dataclass
