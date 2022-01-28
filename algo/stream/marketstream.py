@@ -8,13 +8,16 @@ from logging import Logger
 from asyncio.exceptions import TimeoutError
 from dataclasses import dataclass
 
+default_sample_interval = 5
+default_log_interval = 5 * 60
+
 
 class PoolStream:
 
     def __init__(self, asset1, asset2, client: TinymanClient,
                  logger: Logger = None,
-                 sample_interval: int = 5,
-                 log_interval: int = 60,
+                 sample_interval: int = default_sample_interval,
+                 log_interval: int = default_log_interval,
                  log_info: str = None
                  ):
 
@@ -58,8 +61,8 @@ class MultiPoolStream:
 
     def __init__(self, assetPairs: Iterable[Tuple[int, int]], client: TinymanClient,
                  logger: Logger,
-                 sample_interval: int = 5,
-                 log_interval: int = 60 * 5
+                 sample_interval: int = default_sample_interval,
+                 log_interval: int = default_log_interval
                  ):
 
         self.assetPairs = assetPairs

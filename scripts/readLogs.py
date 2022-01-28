@@ -1,4 +1,4 @@
-from stream.sqlite import MarketSqliteLogger
+from algo.stream.sqlite import MarketSqliteLogger
 from contextlib import closing
 import argparse
 
