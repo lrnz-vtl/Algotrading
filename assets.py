@@ -44,7 +44,7 @@ class Universe:
             else:
                 raise e
 
-
+    @lru_cache()
     def _check_pool(self, p0:int, p1:int):
         try:
             return self.client.fetch_pool(p0, p1).exists
