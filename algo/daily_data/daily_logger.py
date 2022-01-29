@@ -11,19 +11,26 @@ class DailyPoolData:
     asset2: int
     timestamp: Timestamp
     last_day_volume_in_usd: float
+    current_issued_liquidity_assets: int
+    liquidity_in_usd: float
+    annual_percentage_rate: float
+    annual_percentage_yield: float
 
     @staticmethod
-    def from_get(get_result:Mapping, t: Timestamp):
+    def from_get(get_result: Mapping, t: Timestamp):
         return DailyPoolData(
             timestamp=t,
             asset1=int(get_result['asset_1']['id']),
             asset2=int(get_result['asset_2']['id']),
-            last_day_volume_in_usd=float(get_result['last_day_volume_in_usd'])
+            last_day_volume_in_usd=float(get_result['last_day_volume_in_usd']),
+            current_issued_liquidity_assets=int(get_result["current_issued_liquidity_assets"]),
+            liquidity_in_usd=float(get_result["liquidity_in_usd"]),
+            annual_percentage_rate=float(get_result["annual_percentage_rate"]),
+            annual_percentage_yield=float(get_result["annual_percentage_yield"]),
         )
 
 
-def get_daily_data(limit:Optional[int] = None):
-
+def get_daily_data(limit: Optional[int] = None):
     if limit is None:
         limit_str = ''
     else:
@@ -34,7 +41,7 @@ def get_daily_data(limit:Optional[int] = None):
     res = requests.get(url).json()['results']
     t = Timestamp.get()
 
-    return [DailyPoolData.from_get(x,t) for x in res]
+    return [DailyPoolData.from_get(x, t) for x in res]
 
 
 class DailyDataLogger(BaseSqliteLogger):
@@ -49,7 +56,11 @@ class DailyDataLogger(BaseSqliteLogger):
             "asset2 int",
             "last_day_volume_in_usd real",
             "now timestamp",
-            "utcnow timestamp"
+            "utcnow timestamp",
+            "current_issued_liquidity_assets int",
+            "liquidity_in_usd float",
+            "annual_percentage_rate float",
+            "annual_percentage_yield float"
         ]
 
     def _row_to_tuple(self, row: DailyPoolData) -> tuple:
@@ -57,6 +68,9 @@ class DailyDataLogger(BaseSqliteLogger):
                 row.asset2,
                 row.last_day_volume_in_usd,
                 row.timestamp.now,
-                row.timestamp.utcnow
+                row.timestamp.utcnow,
+                row.current_issued_liquidity_assets,
+                row.liquidity_in_usd,
+                row.annual_percentage_rate,
+                row.annual_percentage_yield
                 )
-
