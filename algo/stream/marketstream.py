@@ -2,6 +2,7 @@ from tinyman.v1.client import TinymanClient
 from algo.tools.timestamp import Timestamp
 from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
 import asyncio
+import algosdk
 from aiostream import stream
 from algo.stream.aggregators import aggregatePrice, AveragePrice
 from logging import Logger
@@ -33,16 +34,22 @@ class PoolStream:
         next(self.aggregate)
 
         while True:
-            pool = self.client.fetch_pool(self.asset1, self.asset2)
-            time = Timestamp.get()
+            pool = None
+            try:
+                pool = self.client.fetch_pool(self.asset1, self.asset2)
+            except algosdk.error.AlgodHTTPError as e:
+                self.logger.error(f'fetch_pool({self.asset1, self.asset2}) failed, error={e}, code={e.code}. Skipping.')
 
-            if self.logger is not None:
-                self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
+            if pool:
+                time = Timestamp.get()
 
-            maybeRow: Optional[AveragePrice] = self.aggregate.send((time, pool, self.asset1, self.asset2))
+                if self.logger is not None:
+                    self.logger.debug(f"pair={self.log_info}, time={time.utcnow}")
 
-            if maybeRow:
-                yield maybeRow
+                maybeRow: Optional[AveragePrice] = self.aggregate.send((time, pool, self.asset1, self.asset2))
+
+                if maybeRow:
+                    yield maybeRow
 
             await asyncio.sleep(self.sample_interval)
 
