@@ -5,7 +5,7 @@ import argparse
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Read logs from sqlite file.')
-    parser.add_argument('dbfname', '-f', type=str, required=True)
+    parser.add_argument('-f', dest='dbfname', type=str, required=True)
 
     args = parser.parse_args()
 
