@@ -1,10 +1,12 @@
-from strategy.timeseries import exp_average
-from stream.marketstream import MultiPoolStream
+from algo.strategy.timeseries import exp_average
+from algo.stream.marketstream import MultiPoolStream
 from itertools import tee
 import networkx as nx
 import numpy as np
-import assets
 import warnings
+from collections import deque
+
+
 class AnalyticProvider:
     def __init__(self, datastore, time_scale_long=10000, time_scale_short=1000):
         """Take a datastore and compute two EMA to be used in strategy"""
@@ -23,40 +25,41 @@ class AnalyticProvider:
             self.expavg_long[assetid]=exp_average(price,self.time_scale_long)
             self.expavg_short[assetid]=exp_average(price,self.time_scale_short)
 
+
 class PoolGraph:
-    def __init__(self, assetPairs, client, num_trades, logger=None, sample_interval=1, log_interval=5, check_pairs=False):
+    def __init__(self, assetPairs, client, num_trades, logger=None, sample_interval=1, log_interval=5):
         self.client = client
         self.num_trades = num_trades
-        self.update_graph(assetPairs, check_pairs=check_pairs)
-        
-        print(f'Started PoolGraph with {len(self.useful_pairs)} pool streams')
-        self.mps = MultiPoolStream(assetPairs=self.useful_pairs, client=client, sample_interval=sample_interval, log_interval=5, logger=logger)
+        self.update_graph(assetPairs)
 
-    def update_graph(self, assetPairs, check_pairs=False):
+        print(f'Started PoolGraph with {len(self.useful_pairs)} pool streams')
+        self.mps = MultiPoolStream(assetPairs=self.useful_pairs, client=client, sample_interval=sample_interval,
+                                   log_interval=log_interval, logger=logger)
+
+    def update_graph(self, assetPairs):
         
         g = nx.Graph()
         for assetPair in assetPairs:
-            if check_pairs:
-                if self.client.fetch_pool(assetPair[0],assetPair[1]).exists:
-                    g.add_edge(assetPair[0],assetPair[1])
+            if self.client.fetch_pool(assetPair[0], assetPair[1]).exists:
+                g.add_edge(assetPair[0], assetPair[1])
             else:
-                g.add_edge(assetPair[0],assetPair[1])
+                g.add_edge(assetPair[0], assetPair[1])
         
-        cycles=nx.cycle_basis(g)
-        self.useful_pairs=list()
+        cycles = nx.cycle_basis(g)
+        self.useful_pairs = list()
         for c in cycles:
-            if (c[-1]!=0):
+            if c[-1] != 0:
                 if 0 not in c:
                     warnings.warn(f"Ignoring cycle {c} because it has no ALGO swap")
                     continue
                 cd = deque(c)
-                while(cd[-1]!=0):
+                while cd[-1] != 0:
                     cd.rotate(1)
-                c=np.list(cd)
+                c = np.list(cd)
             c = [c[-1]] + c
             a, b = tee(c)
             next(b, None)
-            c = list(zip(a,b))
+            c = list(zip(a, b))
 
             # test that the pool is reasonable (for 0.1 output algo, we input at least 0.001 and no more than 2)
             val = 1_000_000

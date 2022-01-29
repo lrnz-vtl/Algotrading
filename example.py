@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from tinychart_data.tinydata import TinyData
+from algo.tinychart_data.tinydata import TinyData
 import pprint
 
 # address='CO5Y23AD.......'

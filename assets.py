@@ -1,4 +1,6 @@
 import requests
+from tinyman.v1.client import TinymanClient
+from typing import Optional
 
 # Most liquid assets
 assets = [31566704, 226701642, 523683256, 287867876, 230946361,
@@ -10,17 +12,37 @@ assets = [31566704, 226701642, 523683256, 287867876, 230946361,
 #           137594422, 310014962, 378382099, 137020565, 297995609,
 #           241759159]
 
-def find_pools():
-    # FIXME This returns duplicate values
-    throw = ['403996358', '533933723', '559276904']
-    pools = list()
-    res = requests.get(url='https://mainnet.analytics.tinyman.org/api/v1/pools/').json()
-    while res['next']:
-        for p in res['results']:
-            if p['asset_1']['id'] not in throw and p['asset_2']['id'] not in throw:
-                pools.append((int(p['asset_1']['id']), int(p['asset_2']['id'])))
-        res = requests.get(url=res['next']).json()
-    return pools
+class Universe:
+    def __init__(self, client:Optional[TinymanClient], check_pairs:bool = False):
+        self.client = client
+        self.check_pairs = check_pairs
+
+        if check_pairs:
+            assert self.client is not None
+
+        self.pools = self._find_pools()
+
+    def _find_pools(self) -> list[tuple[int,int]]:
+
+        throw = [403996358, 533933723, 559276904]
+
+        pools = set()
+
+        res = requests.get(url='https://mainnet.analytics.tinyman.org/api/v1/pools/').json()
+        while res['next']:
+            for p in res['results']:
+
+                p0, p1 = int(p['asset_1']['id']), int(p['asset_2']['id'])
+                p0, p1 = min(p0,p1), max(p0,p1)
+
+                if ((p0,p1) not in pools)\
+                    and (p0 not in throw and p1 not in throw)\
+                        and (not self.check_pairs or self.client.fetch_pool(p0, p1).exists):
+                    pools.add((p0,p1))
+
+            res = requests.get(url=res['next']).json()
+
+        return list(pools)
 
 
 def get_name(asset_id):

@@ -4,7 +4,7 @@ from algo.stream import sqlite
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
 import argparse
-from assets import find_pools
+from assets import Universe
 
 if __name__ == '__main__':
 
@@ -22,19 +22,14 @@ if __name__ == '__main__':
     logger = logging.getLogger("MarketLogger")
     logger.setLevel(logging.INFO)
 
-    logger.info(f"Fetching pools...")
-    assetPairs = find_pools()
-
-    sortedPairs = [(min(x), max(x)) for x in assetPairs]
-    # assert len(set(sortedPairs)) == len(sortedPairs), \
-    #     f"Len(set(assetPairs)) = {len(set(sortedPairs))}, Len(assetPairs) = {len(sortedPairs)}"
-    sortedPairs = list(set(sortedPairs))
-
     client = TinymanMainnetClient()
 
-    logger.info(f"Logging {len(sortedPairs)} asset pairs")
+    logger.info(f"Fetching pools...")
+    universe = Universe(client=client, check_pairs=True)
 
-    multiPoolStream = MultiPoolStream(assetPairs=sortedPairs, client=client, sample_interval=args.sample_interval,
+    logger.info(f"Logging {len(universe.pools)} asset pairs")
+
+    multiPoolStream = MultiPoolStream(assetPairs=universe.pools, client=client, sample_interval=args.sample_interval,
                                       log_interval=args.log_interval, logger=logger)
 
     with sqlite.MarketSqliteLogger(dbfile=dbfname) as marketLogger:
