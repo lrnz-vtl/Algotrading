@@ -1,7 +1,7 @@
 from tinyman.v1.client import TinymanMainnetClient, TinymanTestnetClient
 from tinyman.v1.optin import prepare_asset_optin_transactions
-from tools.timestamp import Timestamp
-from trade_logger.base import TradeLogger, TradeLog, TradeInfo
+from algo.tools.timestamp import Timestamp
+from algo.trade_logger.base import TradeLogger, TradeLog, TradeInfo
 from logging import Logger
 
 
@@ -33,7 +33,7 @@ class Swapper:
     def asset_optin(self, asset_id):
         """Opt in to an asset"""
         # for algorand, nothing to be done
-        if (asset_id==0):
+        if asset_id == 0:
             return
         acc_info = self.client.algod.account_info(self.address)
         optin = False
@@ -41,7 +41,7 @@ class Swapper:
             if a['asset-id']==asset_id:
                 optin = True
                 break
-        if (not optin):
+        if not optin:
             txn_group = prepare_asset_optin_transactions(
                 asset_id =asset_id,
                 sender=self.address,
@@ -50,7 +50,7 @@ class Swapper:
             txn_group.sign_with_private_key(self.address, self.private_key)
             result = self.client.submit(txn_group, wait=True)
 
-    def price(asset1_id, asset2_id, quantity):
+    def price(self, asset1_id, asset2_id, quantity):
         asset1 = self.client.fetch_asset(asset1_id)  # ALGO
         asset2 = self.client.fetch_asset(asset2_id)  # USDC
         # Fetch the pool we will work with

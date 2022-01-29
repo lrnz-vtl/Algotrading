@@ -1,6 +1,10 @@
+import logging
+
+import algosdk.error
 import requests
 from tinyman.v1.client import TinymanClient
 from typing import Optional
+from functools import lru_cache
 
 # Most liquid assets
 assets = [31566704, 226701642, 523683256, 287867876, 230946361,
@@ -16,11 +20,25 @@ class Universe:
     def __init__(self, client:Optional[TinymanClient], check_pairs:bool = False):
         self.client = client
         self.check_pairs = check_pairs
+        self.logger = logging.getLogger("Universe")
 
         if check_pairs:
             assert self.client is not None
 
         self.pools = self._find_pools()
+
+    @lru_cache()
+    def _check_existing(self, asset_id: int) -> bool:
+        # This is just Algo
+        if asset_id == 0:
+            return True
+        try:
+            self.client.algod.asset_info(asset_id)
+            return True
+        except algosdk.error.AlgodHTTPError as e:
+            self.logger.info(f"Skipping asset {asset_id} because it does not exist: code= {e.code}")
+            self.logger.info(e)
+            return False
 
     def _find_pools(self) -> list[tuple[int,int]]:
 
@@ -35,9 +53,10 @@ class Universe:
                 p0, p1 = int(p['asset_1']['id']), int(p['asset_2']['id'])
                 p0, p1 = min(p0,p1), max(p0,p1)
 
-                if ((p0,p1) not in pools)\
-                    and (p0 not in throw and p1 not in throw)\
-                        and (not self.check_pairs or self.client.fetch_pool(p0, p1).exists):
+                if (not self.check_pairs or (self._check_existing(p0) and self._check_existing(p1)
+                                             and self.client.fetch_pool(p0, p1).exists))\
+                    and ((p0,p1) not in pools)\
+                        and (p0 not in throw and p1 not in throw):
                     pools.add((p0,p1))
 
             res = requests.get(url=res['next']).json()
