@@ -1,4 +1,6 @@
 import logging
+logging.basicConfig(level=logging.INFO)
+
 from algo.stream.marketstream import MultiPoolStream, log_stream, default_sample_interval, default_log_interval
 from algo.stream import sqlite
 from tinyman.v1.client import TinymanMainnetClient
@@ -15,8 +17,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
-
     dbfname = args.dbfname
 
     logger = logging.getLogger("MarketLogger")
@@ -24,7 +24,6 @@ if __name__ == '__main__':
 
     client = TinymanMainnetClient()
 
-    logger.info(f"Fetching pools...")
     universe = Universe(client=client, check_pairs=True)
 
     logger.info(f"Logging {len(universe.pools)} asset pairs")

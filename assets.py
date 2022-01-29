@@ -21,10 +21,12 @@ class Universe:
         self.client = client
         self.check_pairs = check_pairs
         self.logger = logging.getLogger("Universe")
+        self.logger.setLevel(logging.INFO)
 
         if check_pairs:
             assert self.client is not None
 
+        self.logger.info("Finding viable pools...")
         self.pools = self._find_pools()
 
     @lru_cache()
@@ -40,7 +42,14 @@ class Universe:
             self.logger.info(e)
             return False
 
-    def _find_pools(self) -> list[tuple[int,int]]:
+    def _check_pool(self, p0:int, p1:int):
+        try:
+            return self.client.fetch_pool(p0, p1).exists
+        except KeyError as e:
+            self.logger.info(f"Skipping pool ({p0,p1}) because received KeyError with key {e}")
+            return False
+
+    def _find_pools(self) -> list[tuple[int, int]]:
 
         throw = [403996358, 533933723, 559276904]
 
@@ -51,12 +60,11 @@ class Universe:
             for p in res['results']:
 
                 p0, p1 = int(p['asset_1']['id']), int(p['asset_2']['id'])
-                p0, p1 = min(p0,p1), max(p0,p1)
+                p0, p1 = min(p0, p1), max(p0, p1)
 
-                if (not self.check_pairs or (self._check_existing(p0) and self._check_existing(p1)
-                                             and self.client.fetch_pool(p0, p1).exists))\
-                    and ((p0,p1) not in pools)\
-                        and (p0 not in throw and p1 not in throw):
+                if (p0 not in throw and p1 not in throw) \
+                        and ((p0, p1) not in pools)\
+                        and (not self.check_pairs or (self._check_existing(p0) and self._check_existing(p1) and self._check_pool(p0, p1))):
                     pools.add((p0,p1))
 
             res = requests.get(url=res['next']).json()
