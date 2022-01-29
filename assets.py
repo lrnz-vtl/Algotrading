@@ -38,9 +38,12 @@ class Universe:
             self.client.algod.asset_info(asset_id)
             return True
         except algosdk.error.AlgodHTTPError as e:
-            self.logger.info(f"Skipping asset {asset_id} because it does not exist: code= {e.code}")
-            self.logger.info(e)
-            return False
+            if e.code == 404:
+                self.logger.info(f"Skipping asset {asset_id} because it does not exist.")
+                return False
+            else:
+                raise e
+
 
     def _check_pool(self, p0:int, p1:int):
         try:
