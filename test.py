@@ -4,7 +4,7 @@ import asyncio
 import logging
 from daemon import runner
 
-from algo.universe.universe import Universe
+from algo.universe.pools import Universe
 from algo.strategy.strategies import StrategyArbitrage
 from algo.strategy.analysis import PoolGraph
 from algo.trading.tradingengine import TradingEngineArbitrage
