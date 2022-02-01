@@ -1,16 +1,14 @@
-from abc import ABC, abstractmethod
-from swapper import Swapper
-from wallets import Portfolio
-from strategy.analysis import AnalyticProvider
 import warnings
+from collections import deque
 from itertools import tee
 import numpy as np
+
 
 # class Strategy(ABC):
 #     @abstractmethod
 #     def assign_portfolio(self, ds, pf):
 #         pass
-    
+
 #     @abstractmethod
 #     def rebalance_portfolio(self, ds, pf):
 #         pass
@@ -26,15 +24,16 @@ class SimpleStrategyEMA:
 
     def score(self, assetid):
         """Return list of tuples with coins to long"""
-        #for assetid in self.analytic_provider.expavg_long:
-        diff = self.analytic_provider.expavg_long[assetid]-self.analytic_provider.expavg_short[assetid]
+        # for assetid in self.analytic_provider.expavg_long:
+        diff = self.analytic_provider.expavg_long[assetid] - self.analytic_provider.expavg_short[assetid]
         # if difference becomes negative and was previously positive, buy coin, and vice vera
-        if (diff[-1]<0):
+        if diff[-1] < 0:
             self.sell.discard(assetid)
             self.buy.add(assetid)
-        if (diff[-1]>0):
+        if diff[-1] > 0:
             self.buy.discard(assetid)
             self.sell.add(assetid)
+
 
 class StrategyArbitrage:
     """An arbitrage strategy looking for profitable loops in the exchange"""
@@ -42,7 +41,7 @@ class StrategyArbitrage:
     def __init__(self, pool_graph, gain_threshold=1.02):
         self.pool_graph = pool_graph
         self.swap_loops = list()
-        self.gain_threshold=gain_threshold
+        self.gain_threshold = gain_threshold
 
     def score(self):
         self.pool_graph.update_candidates()
@@ -53,21 +52,21 @@ class StrategyArbitrage:
                 break
             c = self.pool_graph.cycles[i]
             # rotate the array until algo (0) is at the end
-            if (c[-1]!=0):
+            if c[-1] != 0:
                 if 0 not in c:
                     warnings.warn(f"Warning: Ignoring cycle {c} because it has no ALGO swap")
                     continue
                 cd = deque(c)
-                while(cd[-1]!=0):
+                while cd[-1] != 0:
                     cd.rotate(1)
-                c=np.array(cd)
+                c = np.array(cd)
             # add the last element at the start to close the loop
             c = np.append(c[-1], c)
             # create a list of tuples for the swaps
             # [a1, a2, a3, a1] -> [(a1, a2), (a2, a3), (a3, a1)]
             a, b = tee(c)
             next(b, None)
-            c = list(zip(a,b))
+            c = list(zip(a, b))
             # add the current list of swaps to the full list
             self.swap_loops.append(c)
             self.max_gains.append(self.pool_graph.cycles_gain[i])
