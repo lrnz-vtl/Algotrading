@@ -54,21 +54,16 @@ def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[Average
         pool: Pool
 
         # Price of buying infinitesimal amount of asset2 in units of asset1, excluding transaction costs
-        try:
+        if pool.asset2_reserves == 0 or pool.asset1_reserves == 0:
+            price = np.nan
+        else:
             price = pool.asset2_reserves / pool.asset1_reserves
-            asset1_reserves = pool.asset1_reserves
-            asset2_reserves = pool.asset2_reserves
-            if a1 == pool.asset2.id:
-                asset1_reserves, asset2_reserves = asset2_reserves, asset1_reserves
-                price = 1.0 / price
-        except ZeroDivisionError:
-            price = np.nan
-            asset1_reserves = np.nan
-            asset2_reserves = np.nan
-        except TypeError:
-            price = np.nan
-            asset1_reserves = np.nan
-            asset2_reserves = np.nan
+        asset1_reserves = pool.asset1_reserves
+        asset2_reserves = pool.asset2_reserves
+        if a1 == pool.asset2.id:
+            asset1_reserves, asset2_reserves = asset2_reserves, asset1_reserves
+            price = 1.0 / price
+
         if mean is not None:
             t0 = time_bucket(time, bucket_delta)
             t1 = time_bucket(t, bucket_delta)

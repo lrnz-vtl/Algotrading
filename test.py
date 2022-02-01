@@ -4,11 +4,10 @@ import asyncio
 import logging
 from daemon import runner
 
-from algo.tinychart_data.datastore import DataStore
-from assets import assets, all_pairs, Universe
-from algo.strategy.strategies import SimpleStrategyEMA, StrategyArbitrage
-from algo.strategy.analysis import AnalyticProvider, PoolGraph
-from algo.trading.tradingengine import TradingEngineEMA, TradingEngineArbitrage
+from algo.universe.universe import Universe
+from algo.strategy.strategies import StrategyArbitrage
+from algo.strategy.analysis import PoolGraph
+from algo.trading.tradingengine import TradingEngineArbitrage
 # FIXME
 from keys import address, private_key
 from wallets import Portfolio
@@ -106,12 +105,12 @@ samplingLogger = logging.getLogger("SamplingLogger")
 # pools = all_pairs
 client = TinymanTestnetClient() if testnet else TinymanMainnetClient()
 universe = Universe(client=client, check_pairs=False)
-ap = PoolGraph(assetPairs=universe.pools,
+ap = PoolGraph(assetPairs=universe.pairs,
                client=client,
                num_trades=50, logger=samplingLogger, sample_interval=10, log_interval=50)
 strat = StrategyArbitrage(ap, gain_threshold=1.012)
 
-print(f'Starting a trading strategy with {len(universe.pools)} pools')
+print(f'Starting a trading strategy with {len(universe.pairs)} pools')
 app = App(address, private_key, analytic_provider=ap, strategy=strat, trading_class=TradingEngineArbitrage)
 daemon_runner = runner.DaemonRunner(app)
 daemon_runner.do_action()

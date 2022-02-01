@@ -40,7 +40,7 @@ class PoolStream:
             except algosdk.error.AlgodHTTPError as e:
                 self.logger.error(f'fetch_pool({self.asset1, self.asset2}) failed, error={e}, code={e.code}. Skipping.')
 
-            if pool:
+            if pool and pool.exists:
                 time = Timestamp.get()
 
                 if self.logger is not None:

@@ -1,6 +1,6 @@
 import pandas as pd
-from tinychart_data import tinydata
-from assets import assets, get_name
+from algo.tinychart_data import tinydata
+from algo.universe.assets import assets, get_name
 from time import perf_counter
 from contextlib import contextmanager
 from dataclasses import dataclass

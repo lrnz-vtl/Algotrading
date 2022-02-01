@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-import assets, warnings
+import warnings
+from algo.universe import assets
 import numpy as np
 import asyncio
 

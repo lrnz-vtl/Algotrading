@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from assets import get_name
+from algo.universe.assets import get_name
 
 
 def plot_asset(ds, asset_id):

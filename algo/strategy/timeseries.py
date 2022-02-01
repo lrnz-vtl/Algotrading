@@ -1,4 +1,4 @@
-from tinychart_data.datastore import DataStore, AssetData
+from algo.tinychart_data.datastore import DataStore, AssetData
 import pandas as pd
 import numpy as np
 
