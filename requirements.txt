@@ -13,3 +13,4 @@ tinyman-py-sdk @ git+https://github.com/tinymanorg/tinyman-py-sdk.git@d36a9c1b5f
 urllib3==1.26.7
 python-daemon==2.3.0
 networkx==2.6.3
+jupyter==1.0.0
