@@ -1,66 +1,98 @@
-import logging
-import requests
+from __future__ import annotations
 from tinyman.v1.client import TinymanClient
-from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-
-ALGO_DECIMALS = 6
-
-# Most liquid assets
-assets = [31566704, 226701642, 523683256, 287867876, 230946361,
-          137594422, 310014962, 378382099, 137020565, 297995609, 470842789]
-
-
-# assets = [163650, 283820866, 31566704, 226701642, 320259224, 27165954,
-#           312769, 300208676, 384303832, 287867876, 230946361,
-#           137594422, 310014962, 378382099, 137020565, 297995609,
-#           241759159]
+import json
+import logging
+import requests
+from enum import Flag, auto
+import dataclasses
+from dataclasses import dataclass
+from algo.universe.hardcoded import ALGO_DECIMALS
 
 
-def get_name(asset_id):
-    """Return the name and ticker for a given asset id"""
-    return {
-        0: ('Algorand', 'ALGO'),
-        163650: ('Asia Reserve Currency Coin', 'ARCC'),
-        283820866: ('Xfinite Entertainment Token', 'XET'),
-        31566704: ('USDC', 'USDC'),
-        226701642: ('Yieldly', 'YLDY'),
-        320259224: ('Wrapped Algo', 'wALGO'),
-        27165954: ('PLANET', 'Planets'),
-        312769: ('Tether USDt', 'USDt'),
-        300208676: ('Smile Coin', 'SMILE'),
-        523683256: ('AKITA INU', 'AKTA'),
-        #        384303832: ('AKITA INU TOKEN', 'AKITA'),
-        287867876: ('Opulous', 'OPUL'),
-        230946361: ('AlgoGems', 'GEMS'),
-        137594422: ('HEADLINE', 'HDL'),
-        310014962: ('AlcheCoin', 'ALCH'),
-        378382099: ('Tinychart Token', 'TINY'),
-        137020565: ('Buy Token', 'BUY'),
-        297995609: ('Choice Coin', 'Choice'),
-        241759159: ('Freckle', 'FRKL'),
-        470842789: ('Defly Token', 'DEFLY')
-    }.get(asset_id, (None, None))
+@dataclass
+class AssetInfo:
+    id: int
+    is_liquidity_token: bool
+    name: str
+    unit_name: str
+    decimals: int
+    total_amount: int
+    url: str
+    is_verified: bool
+
+    @staticmethod
+    def from_dict(d):
+        d['id'] = int(d['id'])
+        return AssetInfo(**d)
 
 
-# FIXME Why is this missing 470842789 ?
-verified_assets = [0, 163650, 265122, 312769, 438828, 438831, 438832, 438833, 438836, 438837, 438838, 438839, 438840,
-                   2350276, 2512768, 2513338, 2513746, 2514157, 2751733, 2757561, 2836760, 2838934, 6547014, 6587142,
-                   27165954, 31566704, 83209012, 84507107, 112866019, 125584116, 127494380, 135464366, 137020565,
-                   137594422, 142838028, 143787817, 181380658, 187215017, 197112469, 200730915, 213345970, 226265212,
-                   226701642, 227855942, 230946361, 231880341, 233939122, 237913743, 239444645, 241759159, 246516580,
-                   246519683, 251014570, 257805044, 259535809, 263891752, 263893023, 264229768, 272839935, 276461096,
-                   281003266, 281003863, 281004528, 281005704, 283820866, 284090786, 287504952, 287867876, 291248873,
-                   297995609, 300208676, 305992851, 306034694, 307329013, 310014962, 310079703, 311714745, 317264620,
-                   317670428, 319473667, 320259224, 327821015, 329110405, 330168845, 338543684, 340987160, 342889824,
-                   352658929, 353409462, 361339277, 361671874, 361806984, 361940410, 362992028, 363833896, 364187398,
-                   364251975, 366511140, 367029007, 370073176, 371035527, 373932709, 383581973, 384513011, 386192725,
-                   386195940, 388502764, 388592191, 391379500, 392693339, 393155456, 393537671, 394014424, 394412320,
-                   396841550, 403499324, 405565155, 412056867, 416737271, 426980914, 433100599, 435335235, 441139422,
-                   445907756, 445924570, 445925266, 445935868, 452047208, 453785660, 453816186, 456473987, 457205263,
-                   457819394, 461849439, 462629820, 463554836, 465818547, 465818553, 465818554, 465818555, 465818563,
-                   465865291, 466872875, 467134640, 478549868, 509808838, 511484048, 522698212]
+class AssetType(Flag):
+    LIQUIDITY = auto()
+    NOT_LIQUIDITY = auto()
+    ALL = LIQUIDITY | NOT_LIQUIDITY
+
+
+class CandidateASAStore:
+    """ This includes both liquidity and not-liquidity token """
+
+    def __init__(self, assets: list[AssetInfo], verified_only: bool):
+        self.verified_only = verified_only
+        self.assets = assets
+
+    @staticmethod
+    def from_scratch(verified_only: bool = True, test: bool = False) -> CandidateASAStore:
+        assets = CandidateASAStore._fetch(verified_only, test)
+        return CandidateASAStore(assets=assets, verified_only=verified_only)
+
+    @staticmethod
+    def from_store(cs: CandidateASAStore, filter_type: AssetType) -> CandidateASAStore:
+
+        def filter_asa(x):
+            if x.is_liquidity_token and (filter_type & AssetType.LIQUIDITY):
+                return True
+            if (not x.is_liquidity_token) and (filter_type & AssetType.NOT_LIQUIDITY):
+                return True
+            return False
+
+        assets = [x for x in cs.assets if filter_asa(x)]
+        return CandidateASAStore(assets, cs.verified_only)
+
+    @staticmethod
+    def _fetch(verified_only: bool, test: bool) -> list[AssetInfo]:
+
+        def filter_asa(x):
+            if verified_only and not x['is_verified'] and not x['is_liquidity_token']:
+                return False
+            return True
+
+        url = 'https://mainnet.analytics.tinyman.org/api/v1/assets/?ordering=id'
+        results = []
+        i = 0
+        while url is not None:
+            if test and i >= 10:
+                break
+
+            res = requests.get(url)
+            try:
+                res = res.json()
+            except json.decoder.JSONDecodeError as e:
+                raise json.decoder.JSONDecodeError(f"url={url}", doc=e.doc, pos=e.pos) from e
+
+            url = res['next']
+            new = [AssetInfo.from_dict(x) for x in res['results'] if filter_asa(x)]
+            results += new
+
+            i += 1
+
+        return results
+
+    def as_dict(self):
+        return {
+            'verified_only': self.verified_only,
+            'assets': [dataclasses.asdict(x) for x in self.assets]
+        }
 
 
 @dataclass
@@ -81,7 +113,6 @@ class AssetMarketDataStore:
         self.logger = logging.getLogger('AssetMarketDataStore')
         self.data = [x for x in [self.get_info(asset_id) for asset_id in asset_list] if x is not None]
         self.data = sorted(self.data, key=lambda x: x.fdmc)
-
 
     def get_info(self, asset_id: int) -> Optional[AssetMarketStats]:
 
@@ -114,26 +145,3 @@ class AssetMarketDataStore:
             )
         else:
             return None
-
-
-decimals = {0: 0, 163650: 6, 265122: 3, 312769: 6, 438828: 6, 438831: 6, 438832: 0, 438833: 0, 438836: 0, 438837: 0,
-            438838: 0, 438839: 0, 438840: 0, 2350276: 6, 2512768: 6, 2513338: 6, 2513746: 6, 2514157: 6, 2751733: 7,
-            2757561: 7, 2836760: 0, 2838934: 0, 6547014: 5, 6587142: 5, 27165954: 6, 31566704: 6, 83209012: 8,
-            84507107: 2, 112866019: 4, 125584116: 3, 127494380: 4, 135464366: 6, 137020565: 2, 137594422: 6,
-            142838028: 2, 143787817: 0, 181380658: 2, 187215017: 2, 197112469: 6, 200730915: 0, 213345970: 8,
-            226265212: 0, 226701642: 6, 227855942: 6, 230946361: 6, 231880341: 7, 233939122: 0, 237913743: 0,
-            239444645: 0, 241759159: 0, 246516580: 6, 246519683: 6, 251014570: 0, 257805044: 0, 259535809: 0,
-            263891752: 6, 263893023: 6, 264229768: 2, 272839935: 6, 276461096: 0, 281003266: 0, 281003863: 0,
-            281004528: 0, 281005704: 0, 283820866: 9, 284090786: 0, 287504952: 0, 287867876: 10, 291248873: 0,
-            297995609: 2, 300208676: 6, 305992851: 3, 306034694: 0, 307329013: 0, 310014962: 0, 310079703: 0,
-            311714745: 6, 317264620: 0, 317670428: 10, 319473667: 5, 320259224: 6, 327821015: 0, 329110405: 0,
-            330168845: 2, 338543684: 5, 340987160: 8, 342889824: 6, 352658929: 0, 353409462: 4, 361339277: 2,
-            361671874: 5, 361806984: 0, 361940410: 0, 362992028: 2, 363833896: 5, 364187398: 3, 364251975: 0,
-            366511140: 0, 367029007: 0, 370073176: 1, 371035527: 0, 373932709: 2, 383581973: 6, 384513011: 0,
-            386192725: 8, 386195940: 8, 388502764: 6, 388592191: 1, 391379500: 6, 392693339: 4, 393155456: 2,
-            393537671: 6, 394014424: 0, 394412320: 3, 396841550: 6, 403499324: 0, 405565155: 5, 412056867: 6,
-            416737271: 0, 426980914: 2, 433100599: 2, 435335235: 0, 441139422: 6, 445907756: 2, 445924570: 2,
-            445925266: 2, 445935868: 2, 452047208: 6, 453785660: 3, 453816186: 6, 456473987: 6, 457205263: 2,
-            457819394: 6, 461849439: 3, 462629820: 6, 463554836: 6, 465818547: 6, 465818553: 6, 465818554: 8,
-            465818555: 8, 465818563: 6, 465865291: 6, 466872875: 6, 467134640: 6, 478549868: 0, 509808838: 6,
-            511484048: 2, 522698212: 1}

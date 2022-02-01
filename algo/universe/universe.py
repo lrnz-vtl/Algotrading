@@ -1,9 +1,10 @@
-import logging
+from __future__ import annotations
 import algosdk.error
-import requests
 from tinyman.v1.client import TinymanClient
 from typing import Optional
 from functools import lru_cache
+import logging
+import requests
 from dataclasses import dataclass
 
 
