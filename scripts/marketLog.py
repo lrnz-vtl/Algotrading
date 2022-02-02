@@ -51,7 +51,7 @@ if __name__ == '__main__':
     multiPoolStream = MultiPoolStream(assetPairs=pairs, client=client, sample_interval=args.sample_interval,
                                       log_interval=args.log_interval, logger=logger)
 
-    with sqlite.MarketSqliteLogger(dbfile=str(dbfname)) as marketLogger:
+    with sqlite.MarketSqliteLogger(run_name=run_name) as marketLogger:
 
         marketLogger.create_table(ignore_existing=True)
         def logf(x):

@@ -22,6 +22,7 @@ def nullable_strtofloat(x):
     else:
         return float(x)
 
+
 @dataclass
 class PoolInfo:
     asset1_id: int

@@ -128,7 +128,7 @@ class AssetMarketDataStore:
 
         if pool_info.exists:
             # FIXME These calculations are wrong, I'm not sure why
-            if (pool_info.asset2_reserves == 0 or pool_info.asset1_reserves == 0):
+            if pool_info.asset2_reserves == 0 or pool_info.asset1_reserves == 0:
                 price = np.nan
             else:
                 price = (pool_info.asset2_reserves / (10 ** asset_info.decimals)) / \
