@@ -1,0 +1,170 @@
+{
+    "pools": [
+        {
+            "asset1_id": 470842789,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552687530,
+            "current_asset_1_reserves_in_usd": 1825259.638306,
+            "current_asset_2_reserves_in_usd": 1825655.879775,
+            "creation_round": 18727078,
+            "address": "XLNMBK3GMC4YEF562DMEOZEYTNDWJLQRN2GFQ3MGLVNIJTOTVGVD75DVKM",
+            "current_issued_liquidity_assets": 10671716582892,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 465865291,
+            "asset2_id": 31566704,
+            "liquidity_asset_id": 552737686,
+            "current_asset_1_reserves_in_usd": 1384198.67453,
+            "current_asset_2_reserves_in_usd": 1384453.376779,
+            "creation_round": 18727433,
+            "address": "CS4BG6WSTUYLX7GEYRDERPNV4D2NWCQNNSJVMQV2BDCR4EFJUSLB5JQHT4",
+            "current_issued_liquidity_assets": 1400026191151,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 226701642,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552655440,
+            "current_asset_1_reserves_in_usd": 1028084.848296,
+            "current_asset_2_reserves_in_usd": 1037654.493653,
+            "creation_round": 18726645,
+            "address": "KX6S647W6BEN6XHEJVMXK3UYLVNGT2Q6PHQSF5AA2JSSDFSOX7R4MESXRY",
+            "current_issued_liquidity_assets": 9942965256607,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 31566704,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552647097,
+            "current_asset_1_reserves_in_usd": 991742.03132,
+            "current_asset_2_reserves_in_usd": 991750.347988,
+            "creation_round": 18726480,
+            "address": "FPOU46NBKTWUZCNMNQNXRWNW3SMPOOK4ZJIN5WSILCWP662ANJLTXVRUKA",
+            "current_issued_liquidity_assets": 962200930908,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 523683256,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552662141,
+            "current_asset_1_reserves_in_usd": 534647.755905,
+            "current_asset_2_reserves_in_usd": 534661.219664,
+            "creation_round": 18726805,
+            "address": "AJSPYMRPGC5GLPS6DC3H42OIBID3GXKX576BWPOLVLHAMQ5AH2SOEABT7Y",
+            "current_issued_liquidity_assets": 5738475842907,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 283820866,
+            "asset2_id": 226701642,
+            "liquidity_asset_id": 553048918,
+            "current_asset_1_reserves_in_usd": 285016.564451,
+            "current_asset_2_reserves_in_usd": 286120.976996,
+            "creation_round": 18729314,
+            "address": "PEU4L3HTTQRY6RM7P2C2XLGUZZVYSW2H5GQSTAR4TDHGAFBWAWSY636WWE",
+            "current_issued_liquidity_assets": 376019263565937,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 567485181,
+            "asset2_id": 0,
+            "liquidity_asset_id": 570806149,
+            "current_asset_1_reserves_in_usd": 209471.556303,
+            "current_asset_2_reserves_in_usd": 209870.763078,
+            "creation_round": 18893113,
+            "address": "FFSTKPZW6PTWK7BYLKNOCPNQ2DYED5ASRRW723NMDHOGD6IHQXIVBKCBBA",
+            "current_issued_liquidity_assets": 820326507294,
+            "is_verified": false
+        },
+        {
+            "asset1_id": 388592191,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552665159,
+            "current_asset_1_reserves_in_usd": 207108.665822,
+            "current_asset_2_reserves_in_usd": 207102.287818,
+            "creation_round": 18726845,
+            "address": "34UK57GUXQJS7RQVGGQOKSCFCVD5XWP4RQIQN5S723C5AR37BWBRFWWSHA",
+            "current_issued_liquidity_assets": 5814338578,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 226701642,
+            "asset2_id": 163650,
+            "liquidity_asset_id": 553056313,
+            "current_asset_1_reserves_in_usd": 207362.519799,
+            "current_asset_2_reserves_in_usd": 206595.982016,
+            "creation_round": 18729396,
+            "address": "A6CBKEIYKZJO4H564PBYRUU7IH3LUUZ5SDSSR6KC2N4XSZUBR2WQFSTEYE",
+            "current_issued_liquidity_assets": 6658498801872,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 287867876,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552667087,
+            "current_asset_1_reserves_in_usd": 179728.730752,
+            "current_asset_2_reserves_in_usd": 181219.085675,
+            "creation_round": 18726878,
+            "address": "NAGNDMUYV5W547XD463NM5YY3LUQZBMGJLFJHISWKFVIHTLRE2BPPTT33Q",
+            "current_issued_liquidity_assets": 19723074464583,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 511484048,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552690161,
+            "current_asset_1_reserves_in_usd": 179925.559258,
+            "current_asset_2_reserves_in_usd": 178791.633986,
+            "creation_round": 18727096,
+            "address": "HPPSKZI7BIRCTCCTIAFES5LWP2WZUQJLKFUQPBK2FOXHJSA2J4BKCNL42A",
+            "current_issued_liquidity_assets": 17942690706,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 27165954,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552686074,
+            "current_asset_1_reserves_in_usd": 153533.426697,
+            "current_asset_2_reserves_in_usd": 153447.275974,
+            "creation_round": 18727066,
+            "address": "5XQEBPFLVR5WOGZNVSLHVKELRDP2LVVLB44OWZ7WA3JKQ72SYTD6MVZTWI",
+            "current_issued_liquidity_assets": 269336926766,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 137594422,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552706313,
+            "current_asset_1_reserves_in_usd": 148038.583403,
+            "current_asset_2_reserves_in_usd": 147917.399513,
+            "creation_round": 18727207,
+            "address": "4QDLMVQORYVMBABY2EXGIVK53TBJWURS4PH2OC2TMOGKSZVMTOA6XHHZE4",
+            "current_issued_liquidity_assets": 161548713805,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 226265212,
+            "asset2_id": 0,
+            "liquidity_asset_id": 552642388,
+            "current_asset_1_reserves_in_usd": 126399.31904,
+            "current_asset_2_reserves_in_usd": 125853.403984,
+            "creation_round": 18726421,
+            "address": "H3DSZ4DXLJQ7OXG3NQUSGS2NXDNQG4BVZRWJWGGWDOVORHRTLE2IVJYGT4",
+            "current_issued_liquidity_assets": 4229667398,
+            "is_verified": true
+        },
+        {
+            "asset1_id": 31566704,
+            "asset2_id": 312769,
+            "liquidity_asset_id": 552888874,
+            "current_asset_1_reserves_in_usd": 117650.069044,
+            "current_asset_2_reserves_in_usd": 117675.882226,
+            "creation_round": 18728551,
+            "address": "I37JDCOJCK2JSPRMV5HHFHQ54YU6J6VWCBCDNULIT5ZJWO357R2DJLGIBM",
+            "current_issued_liquidity_assets": 116750256580,
+            "is_verified": true
+        }
+    ],
+    "poolinfo_cache_name": "20220201-190234"
+}

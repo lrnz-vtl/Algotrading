@@ -1,6 +1,6 @@
 from __future__ import annotations
-
 import json
+import os.path
 
 import algosdk.error
 from tinyman.v1.client import TinymanClient
@@ -10,7 +10,17 @@ import requests
 from dataclasses import dataclass
 import dataclasses
 from typing import Optional, Union
+from definitions import ROOT_DIR
+import  numpy as np
 
+POOL_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches/candidate_pools')
+
+
+def nullable_strtofloat(x):
+    if x is None:
+        return np.nan
+    else:
+        return float(x)
 
 @dataclass
 class PoolInfo:
@@ -36,6 +46,17 @@ class PoolInfo:
             **{key: r[key] for key in keys}
         )
 
+    @staticmethod
+    def from_dict(r: dict):
+        floatkeys = ['current_asset_1_reserves_in_usd', 'current_asset_2_reserves_in_usd']
+        for key in floatkeys:
+            r[key] = nullable_strtofloat(r[key])
+
+        intkeys = ["asset1_id", "asset2_id", "liquidity_asset_id", 'creation_round', 'current_issued_liquidity_assets']
+        for key in intkeys:
+            r[key] = int(r[key])
+
+        return PoolInfo(**r)
 
 @dataclass
 class PoolInfoStoreScratchInputs:
@@ -64,11 +85,14 @@ class PoolInfoStore:
             self.logger.info("Loading from cache")
             self.client = None
             self.query_limit = inputs['query_limit']
-            self.pools = [PoolInfo.from_query_result(x) for x in inputs['pools']]
+            self.pools = [PoolInfo.from_dict(x) for x in inputs['pools']]
 
     @staticmethod
-    def from_cache(fname:str) -> PoolInfoStore:
-        with open(fname) as f:
+    def from_cache(cache_name: str) -> PoolInfoStore:
+
+        full_name = os.path.join(POOL_CACHE_BASEDIR, cache_name, 'all_pools.json')
+
+        with open(full_name) as f:
             data = json.load(f)
 
         return PoolInfoStore(data)
@@ -132,6 +156,14 @@ class PoolInfoStore:
                 pools.append(PoolInfo.from_query_result(p))
 
         return pools
+
+    def serialize(self, cache_name: str):
+        base_folder = os.path.join(POOL_CACHE_BASEDIR, cache_name)
+        cache_fname = os.path.join(base_folder, 'all_pools.json')
+        os.makedirs(base_folder, exist_ok=True)
+
+        with open(cache_fname, 'w') as f:
+            json.dump(self.asdicts(), f, indent=4)
 
     def asdicts(self):
         return {'client': type(self.client).__name__,

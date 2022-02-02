@@ -1,52 +1,54 @@
 import json
 import logging
-logging.basicConfig(level=logging.INFO)
+import os.path
 
-from algo.stream.marketstream import MultiPoolStream, log_stream, default_sample_interval, default_log_interval
+logging.basicConfig(level=logging.INFO)
+from algo.stream.marketstream import MultiPoolStream, log_stream, default_sample_interval, default_log_interval, MARKETLOG_BASEFOLDER
 from algo.stream import sqlite
 from tinyman.v1.client import TinymanMainnetClient
 import asyncio
 import time
 import argparse
-from algo.universe.assets import Universe
-from pathlib import Path
+from algo.universe.universe import Universe
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Log market data to file.')
-    parser.add_argument('-f', dest='base_folder',  type=str, required=True)
-    parser.add_argument( '-s', dest='sample_interval', type=int, default=default_sample_interval, help='Sample interval in seconds')
+    parser.add_argument('-c', dest='universe_cache_name',  type=str, required=True, help='Name of the universe cache to log')
+    # parser.add_argument('-r', dest='run_name', type=str, required=True, help='Name of the logging run')
+    parser.add_argument('-s', dest='sample_interval', type=int, default=default_sample_interval, help='Sample interval in seconds')
     parser.add_argument('-l', dest='log_interval', type=int, default=default_log_interval, help='log interval in seconds')
-    parser.add_argument('-t', '--test', dest='test', action='store_true',
-                        help='Test (quicker) run')
 
     args = parser.parse_args()
 
-    base_folder = Path(args.base_folder)
+    universe = Universe.from_cache(args.universe_cache_name)
+
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    run_name = timestr
+    run_basefolder = os.path.join(MARKETLOG_BASEFOLDER, run_name)
+    os.makedirs(run_basefolder, exist_ok=True)
 
     logger = logging.getLogger("MarketLogger")
     logger.setLevel(logging.INFO)
 
     client = TinymanMainnetClient()
 
-    universe = Universe(client=client, check_pairs=True, test=args.test)
-
     info = {
         'sample_interval': args.sample_interval,
         'log_interval': args.log_interval,
-        'pairs': universe.pairs
+        'universe_cache_name': args.universe_cache_name
     }
 
-    timestr = time.strftime("%Y%m%d-%H%M%S")
-    info_fname = base_folder / f'run_{timestr}.json'
-    dbfname = base_folder / 'marketData.db'
+    dbfname = os.path.join(run_basefolder, 'data.db')
+    infofname = os.path.join(run_basefolder, 'info.json')
 
-    with open(info_fname, 'w') as f:
-        json.dump(info, f)
+    with open(infofname, 'w') as f:
+        json.dump(info, f, indent=4)
 
-    logger.info(f"Logging {len(universe.pairs)} asset pairs")
+    pairs = [(pool.asset1_id, pool.asset2_id) for pool in universe.pools]
+    logger.info(f"Logging {len(pairs)} asset pairs")
 
-    multiPoolStream = MultiPoolStream(assetPairs=universe.pairs, client=client, sample_interval=args.sample_interval,
+    multiPoolStream = MultiPoolStream(assetPairs=pairs, client=client, sample_interval=args.sample_interval,
                                       log_interval=args.log_interval, logger=logger)
 
     with sqlite.MarketSqliteLogger(dbfile=str(dbfname)) as marketLogger:

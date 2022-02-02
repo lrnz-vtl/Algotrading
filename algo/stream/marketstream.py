@@ -1,3 +1,5 @@
+import os.path
+
 from tinyman.v1.client import TinymanClient
 from algo.tools.timestamp import Timestamp
 from typing import Optional, Tuple, Iterable, AsyncGenerator, Coroutine, Any
@@ -8,9 +10,11 @@ from algo.stream.aggregators import aggregatePrice, AveragePrice
 from logging import Logger
 from asyncio.exceptions import TimeoutError
 from dataclasses import dataclass
+from definitions import ROOT_DIR
 
 default_sample_interval = 5
 default_log_interval = 5 * 60
+MARKETLOG_BASEFOLDER = os.path.join(ROOT_DIR, 'marketData')
 
 
 class PoolStream:
