@@ -22,15 +22,15 @@ class MarketSqliteLogger(BaseSqliteLogger):
         super().__init__('marketData', db_fname)
 
     # CHECK that reserves are int
-    def _table_format(self) -> list[str]:
+    def _table_format(self) -> list[tuple[str, str]]:
         return [
-            "asset1 int",
-            "asset2 int",
-            "asset1_reserves int",
-            "asset2_reserves int",
-            "price real",
-            "now timestamp",
-            "utcnow timestamp"
+            ("asset1", "int"),
+            ("asset2", "int"),
+            ("asset1_reserves", "int"),
+            ("asset2_reserves", "int"),
+            ("price", "real"),
+            ("now", "timestamp"),
+            ("utcnow", "timestamp")
         ]
 
     def _row_to_tuple(self, row: marketstream.Row) -> tuple:

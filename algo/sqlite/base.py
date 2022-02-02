@@ -14,8 +14,7 @@ class BaseSqliteLogger(ABC):
         self.dbfile = dbfile
 
     @abstractmethod
-    # CHECK that reserves are int
-    def _table_format(self) -> list[str]:
+    def _table_format(self) -> list[tuple[str, str]]:
         pass
 
     @abstractmethod
@@ -35,7 +34,7 @@ class BaseSqliteLogger(ABC):
                 c.execute(
                     f"""
                     create table {self.tablename} 
-                    (id INTEGER PRIMARY KEY, {', '.join(self._table_format())})
+                    (id INTEGER PRIMARY KEY, {', '.join([' '.join(x) for x in self._table_format()])})
                     """)
         self.con.commit()
 

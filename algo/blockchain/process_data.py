@@ -2,7 +2,7 @@ import requests
 import json
 from dataclasses import dataclass
 from typing import Optional
-from tinyman.v1.client import TinymanClient, TinymanMainnetClient
+from tinyman.v1.client import TinymanMainnetClient
 
 
 @dataclass
@@ -11,17 +11,23 @@ class PoolTransaction:
     asset_id: int
     block: int
     counterparty: str
+    tx_type: str
 
 
-def query_transactions(params):
+def query_transactions(params: dict, num_queries: int):
     query = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
     resp = requests.get(query, params=params).json()
-    for tx in resp['transactions']:
-        yield tx
+
+    i = 0
+    while resp and i < num_queries:
+        for tx in resp['transactions']:
+            yield tx
+        resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
+        i += 1
 
 
-def query_transactions_for_pool(pool_address: str):
-    for tx in query_transactions({'address': pool_address}):
+def query_transactions_for_pool(pool_address: str, num_queries: int):
+    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
 
         try:
             if tx['tx-type'] == 'axfer':
@@ -44,20 +50,18 @@ def query_transactions_for_pool(pool_address: str):
             elif pool_address == sender:
                 counterparty = receiver
                 sign = -1
+            elif pool_address == tx[key]['close-to']:
+                # I haven't understood this case but hopefully it's not too important
+                continue
             else:
                 raise ValueError(f'pool_address {pool_address} neither in sender nor receiver')
 
             amount = sign * tx[key]['amount']
             block = tx['confirmed-round']
-            yield PoolTransaction(amount, asset_id, block, counterparty)
+            yield PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'])
 
         except Exception as e:
             raise Exception(json.dumps(tx, indent=4)) from e
-
-
-pool_address = 'XLNMBK3GMC4YEF562DMEOZEYTNDWJLQRN2GFQ3MGLVNIJTOTVGVD75DVKM'
-
-
 
 
 # Logged swap for a pool, excluding redeeming amounts
@@ -77,7 +81,7 @@ class Swap:
 
 # TODO Check this is valid, does it also hold for pools without Algo?
 def is_fee_payment(tx: PoolTransaction):
-    return tx.asset_id == 0 and tx.amount == 2000
+    return tx.asset_id == 0 and tx.amount == 2000 and tx.tx_type == 'pay'
 
 
 class SwapScraper:
@@ -91,7 +95,7 @@ class SwapScraper:
         self.assets = [asset1_id, asset2_id]
         self.address = pool.address
 
-    def scrape(self):
+    def scrape(self, num_queries:int):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
             return tx.counterparty == transaction_out.counterparty \
@@ -102,7 +106,7 @@ class SwapScraper:
         transaction_out: Optional[PoolTransaction] = None
         transaction_in: Optional[PoolTransaction] = None
 
-        for tx in query_transactions_for_pool(self.address):
+        for tx in query_transactions_for_pool(self.address, num_queries):
 
             if transaction_out:
                 # We recorded a transaction out and in, looking for a fee payment
@@ -131,5 +135,5 @@ class SwapScraper:
 
 
 sc = SwapScraper(0, 470842789)
-for tx in sc.scrape():
+for tx in sc.scrape(10):
     print(tx)

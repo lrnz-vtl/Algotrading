@@ -50,17 +50,17 @@ class DailyDataLogger(BaseSqliteLogger):
         super().__init__('dailyData', dbfile)
 
     # CHECK that reserves are int
-    def _table_format(self) -> list[str]:
+    def _table_format(self) -> list[tuple[str,str]]:
         return [
-            "asset1 int",
-            "asset2 int",
-            "last_day_volume_in_usd real",
-            "now timestamp",
-            "utcnow timestamp",
-            "current_issued_liquidity_assets int",
-            "liquidity_in_usd float",
-            "annual_percentage_rate float",
-            "annual_percentage_yield float"
+            ("asset1", "int"),
+            ("asset2", "int"),
+            ("last_day_volume_in_usd", "real"),
+            ("now", "timestamp"),
+            ("utcnow", "timestamp"),
+            ("current_issued_liquidity_assets", "int"),
+            ("liquidity_in_usd", "float"),
+            ("annual_percentage_rate", "float"),
+            ("annual_percentage_yield", "float")
         ]
 
     def _row_to_tuple(self, row: DailyPoolData) -> tuple:
