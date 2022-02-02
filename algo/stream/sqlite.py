@@ -2,7 +2,10 @@ from algo.stream import marketstream
 from algo.sqlite.base import BaseSqliteLogger
 import arrow
 import pandas as pd
-from contextlib import  closing
+from contextlib import closing
+from algo.stream.marketstream import MARKETLOG_BASEFOLDER
+import os
+
 
 def convert_arrowdatetime(s):
     return arrow.get(s)
@@ -14,8 +17,9 @@ def adapt_arrowdatetime(adt):
 
 class MarketSqliteLogger(BaseSqliteLogger):
 
-    def __init__(self, dbfile: str):
-        super().__init__('marketData', dbfile)
+    def __init__(self, run_name: str):
+        db_fname = os.path.join(MARKETLOG_BASEFOLDER, run_name, 'data.db')
+        super().__init__('marketData', db_fname)
 
     # CHECK that reserves are int
     def _table_format(self) -> list[str]:
