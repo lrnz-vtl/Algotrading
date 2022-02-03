@@ -1,9 +1,9 @@
-import requests
+import requests, warnings
 import json
 from dataclasses import dataclass
 from typing import Optional
 from tinyman.v1.client import TinymanMainnetClient
-
+from tinyman.utils import get_state_int
 
 @dataclass
 class PoolTransaction:
@@ -13,6 +13,17 @@ class PoolTransaction:
     counterparty: str
     tx_type: str
 
+def get_pool_state_address(pool_address: str):
+    query = 'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
+    resp = requests.get(query).json()['account']['apps-local-state'][0]
+    state = {y['key']: y['value'] for y in resp['key-value']}
+    return get_state_int(state, 's1'), get_state_int(state,'s2')
+
+def get_pool_state_txn(tx: dict):
+    if tx['tx-type'] != 'appl':
+        warnings.warn('Attempting to extract pool state from non application call')
+    state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]}
+    return get_state_int(state, 's1'), get_state_int(state,'s2')
 
 def query_transactions(params: dict, num_queries: int):
     query = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
