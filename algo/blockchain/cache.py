@@ -1,5 +1,4 @@
 from algo.universe.universe import Universe
-import datetime
 from tinyman.v1.client import TinymanMainnetClient
 from algo.blockchain.process_prices import PriceScraper
 from algo.blockchain.utils import datetime_to_int, generator_to_df
@@ -9,6 +8,9 @@ from definitions import ROOT_DIR
 import numpy as np
 import os
 import pandas as pd
+import datetime
+from pathlib import Path
+import glob
 pd.options.mode.chained_assignment = None  # default='warn'
 
 PRICE_CACHES_BASEDIR = f'{ROOT_DIR}/caches/prices'
@@ -19,6 +21,8 @@ class PriceDataCacher:
         self.client = TinymanMainnetClient()
         self.pools = [(x.asset1_id, x.asset2_id) for x in Universe.from_cache(universe_cache_name).pools]
         self.date_min = date_min
+        assert date_min == datetime.datetime(year=date_min.year, month=date_min.month, day=date_min.day), \
+            f"date_min = {date_min} argument must be date without hours, minutes etc."
 
     def cache(self, cache_name: str):
         basedir = os.path.join(PRICE_CACHES_BASEDIR, cache_name)
@@ -35,9 +39,24 @@ class PriceDataCacher:
         def file_name(date):
             return os.path.join(cache_dir, f'{date}.parquet')
 
+        def path_to_date(fname):
+            datestr = Path(fname).name.split('.')[0]
+            date = datetime.datetime.strptime(datestr, '%Y-%m-%d')
+            return date
+
+        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.parquet')}
+
+        today_date = datetime.datetime.today()
+        date_min = self.date_min
+        while date_min < today_date:
+            if date_min not in existing_dates:
+                break
+            date_min = date_min + datetime.timedelta(days=1)
+        print(f'Found minimun date to scrape for assets {assets[0], assets[1]} = {date_min}')
+
         pc = PriceScraper(self.client, assets[0], assets[1])
         df = generator_to_df(pc.query_pool_state_history(num_queries=None,
-                                                         timestamp_min=datetime_to_int(self.date_min))
+                                                         timestamp_min=datetime_to_int(date_min))
                              )
 
         def cache_if_new(daydf: pd.DataFrame, date):
