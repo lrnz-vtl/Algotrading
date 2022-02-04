@@ -13,6 +13,12 @@ class PoolTransaction:
     counterparty: str
     tx_type: str
 
+@dataclass
+class PoolState:
+    time: int
+    asset1_reserves: int
+    asset2_reserves: int
+
 def get_pool_state_address(pool_address: str):
     query = 'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
     resp = requests.get(query).json()['account']['apps-local-state'][0]
@@ -22,7 +28,7 @@ def get_pool_state_address(pool_address: str):
 def get_pool_state_txn(tx: dict):
     if tx['tx-type'] != 'appl':
         warnings.warn('Attempting to extract pool state from non application call')
-    state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]}
+    state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]['delta']}
     return get_state_int(state, 's1'), get_state_int(state,'s2')
 
 def query_transactions(params: dict, num_queries: int):
@@ -36,6 +42,14 @@ def query_transactions(params: dict, num_queries: int):
         resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
         i += 1
 
+def build_pool_data(pool_address: str, num_queries: int):
+    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
+        if tx['tx-type']!='appl':
+            continue
+        s1, s2 = get_pool_state_txn(tx)
+        if s1 > 0 and s2 > 0:
+            #if not time or t[-1]<tx['round-time']:
+            yield PoolState(tx['round-time'], s1, s2)
 
 def query_transactions_for_pool(pool_address: str, num_queries: int):
     for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
