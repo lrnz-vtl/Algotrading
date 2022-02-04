@@ -4,6 +4,7 @@ from typing import Optional
 from algo.blockchain.utils import query_transactions
 from base64 import b64decode, b64encode
 import warnings
+import datetime
 import time
 from tinyman.v1.client import TinymanClient
 
@@ -60,3 +61,5 @@ class PriceScraper:
                 continue
             prev_time = ps.time
             yield ps
+
+

@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
 from typing import Optional
+import datetime
 
 
 def query_transactions(params: dict, num_queries: Optional[int]):
@@ -13,6 +14,10 @@ def query_transactions(params: dict, num_queries: Optional[int]):
             yield tx
         resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
         i += 1
+
+
+def datetime_to_int(t: datetime.datetime):
+    return int(t.timestamp())
 
 
 def generator_to_df(gen, time_columns=('time',)):
