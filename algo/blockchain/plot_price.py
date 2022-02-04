@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import datetime
 from tinyman.v1.client import TinymanMainnetClient
+from algo.blockchain.process_prices import query_pool_state_history
 
 
 def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int = 0,

@@ -18,8 +18,9 @@ def adapt_arrowdatetime(adt):
 class MarketSqliteLogger(BaseSqliteLogger):
 
     def __init__(self, run_name: str):
-        db_fname = os.path.join(MARKETLOG_BASEFOLDER, run_name, 'data.db')
-        super().__init__('marketData', db_fname)
+        self.base_folder = os.path.join(MARKETLOG_BASEFOLDER, run_name)
+        self.db_fname = os.path.join(self.base_folder, 'data.db')
+        super().__init__('marketData', self.db_fname)
 
     # CHECK that reserves are int
     def _table_format(self) -> list[tuple[str, str]]:

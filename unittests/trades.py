@@ -2,9 +2,9 @@ import unittest
 import logging
 from swapper import Swapper
 from unittests.key import get_private_key, address
-from trade_logger.text import TextLogger
+from algo.trade_logger.text import TextLogger
 from wallets import get_account_data, Portfolio
-from tinyman.v1.client import TinymanTestnetClient, TinymanMainnetClient
+from tinyman.v1.client import TinymanTestnetClient
 
 
 class TestSwapper(unittest.TestCase):

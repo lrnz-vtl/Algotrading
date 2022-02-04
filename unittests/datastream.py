@@ -7,6 +7,7 @@ import asyncio
 import uuid
 from contextlib import closing
 import os
+import shutil
 
 
 class TestStream(unittest.TestCase):
@@ -57,9 +58,9 @@ class TestStream(unittest.TestCase):
         multiPoolStream = MultiPoolStream(assetPairs=assetPairs, client=client, sample_interval=sample_interval,
                                           log_interval=log_interval, logger=samplingLogger)
 
-        dbfname = f'/tmp/{str(uuid.uuid4())}.db'
+        run_name = str(uuid.uuid4())
 
-        with sqlite.MarketSqliteLogger(dbfile=dbfname) as marketLogger:
+        with sqlite.MarketSqliteLogger(run_name=run_name) as marketLogger:
 
             marketLogger.create_table(ignore_existing=True)
             logf = lambda x: marketLogger.log(x)
@@ -72,4 +73,4 @@ class TestStream(unittest.TestCase):
                 for x in c.fetchall():
                     self.logger.info(x)
 
-        os.remove(dbfname)
+        shutil.rmtree(marketLogger.base_folder)
