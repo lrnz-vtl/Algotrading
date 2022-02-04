@@ -120,8 +120,3 @@ class SwapScraper:
             else:
                 if tx.amount < 0 and tx.asset_id in self.assets:
                     transaction_out = tx
-
-
-sc = SwapScraper(0, 470842789)
-for tx in sc.scrape(10):
-    pass

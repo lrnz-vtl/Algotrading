@@ -1,24 +1,22 @@
 import matplotlib.pyplot as plt
-import datetime
+from algo.blockchain.utils import generator_to_df
+from algo.blockchain.process_prices import PriceScraper
 from tinyman.v1.client import TinymanMainnetClient
-from algo.blockchain.process_prices import query_pool_state_history
 
 
 def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int = 0,
                inverse: bool = False, savefig: bool = False):
-    client = TinymanMainnetClient()
-    pool = client.fetch_pool(asset1_id, asset2_id)
-    assert pool.exists
 
-    data = list()
-    for ps in query_pool_state_history(pool.address, num_queries, timestamp):
-        data.append(ps)
+    client = TinymanMainnetClient()
+    ps = PriceScraper(client, asset1_id, asset2_id)
+    pool = client.fetch_pool(asset1=asset1_id, asset2=asset2_id)
+
+    df = generator_to_df(ps.query_pool_state_history(num_queries, timestamp))
 
     if not inverse:
-        price = [p.asset2_reserves/p.asset1_reserves for p in data]
+        price = df.asset2_reserves/df.asset1_reserves
     else:
-        price = [p.asset1_reserves/p.asset2_reserves for p in data]
-    t = [datetime.datetime.fromtimestamp(p.time) for p in data]
+        price = df.asset1_reserves/df.asset2_reserves
 
     plt.xlabel('Time')
     if not inverse:
@@ -26,7 +24,7 @@ def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int 
     else:
         plt.ylabel(f'{pool.asset1.unit_name} per {pool.asset2.unit_name}')
     plt.title(f'{pool.liquidity_asset.name}')
-    plt.plot(t, price)
+    plt.plot(df['time'], price)
     if savefig:
         plt.savefig(f'{pool.asset1.unit_name}_{pool.asset2.unit_name}.png', bbox_inches="tight")
     else:

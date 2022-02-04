@@ -5,7 +5,7 @@ from algo.blockchain.utils import query_transactions
 from base64 import b64decode, b64encode
 import warnings
 import time
-
+from tinyman.v1.client import TinymanClient
 
 def get_state_int(state, key):
     if type(key) == str:
@@ -38,15 +38,25 @@ def get_pool_state_txn(tx: dict):
     return PoolState(tx['round-time'], s1, s2)
 
 
-def query_pool_state_history(pool_address: str, num_queries: Optional[int], timestamp_min: int = 0):
-    prev_time = None
-    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
-        if tx['tx-type'] != 'appl':
-            continue
-        if tx['round-time'] < timestamp_min:
-            break
-        ps = get_pool_state_txn(tx)
-        if not ps or (prev_time and prev_time == ps.time):
-            continue
-        prev_time = ps.time
-        yield ps
+class PriceScraper:
+    def __init__(self, client: TinymanClient, asset1_id: int, asset2_id: int):
+
+        pool = client.fetch_pool(asset1_id, asset2_id)
+        assert pool.exists
+
+        self.liquidity_asset = pool.liquidity_asset.id
+        self.assets = [asset1_id, asset2_id]
+        self.address = pool.address
+
+    def query_pool_state_history(self, num_queries: Optional[int], timestamp_min: int = 0):
+        prev_time = None
+        for tx in query_transactions(params={'address': self.address}, num_queries=num_queries):
+            if tx['tx-type'] != 'appl':
+                continue
+            if tx['round-time'] < timestamp_min:
+                break
+            ps = get_pool_state_txn(tx)
+            if not ps or (prev_time and prev_time == ps.time):
+                continue
+            prev_time = ps.time
+            yield ps
