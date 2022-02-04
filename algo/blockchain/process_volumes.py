@@ -1,9 +1,14 @@
 import json
 from dataclasses import dataclass
 from typing import Optional
-from tinyman.v1.client import TinymanMainnetClient
 from algo.blockchain.utils import query_transactions
+from tinyman.v1.client import TinymanClient
+from algo.blockchain.base import DataScraper
+from algo.blockchain.cache import DataCacher
+from definitions import ROOT_DIR
+import datetime
 
+VOLUME_CACHES_BASEDIR = f'{ROOT_DIR}/caches/volumes'
 
 @dataclass
 class PoolTransaction:
@@ -12,6 +17,7 @@ class PoolTransaction:
     block: int
     counterparty: str
     tx_type: str
+    time: int
 
 
 def query_transactions_for_pool(pool_address: str, num_queries: int):
@@ -46,7 +52,7 @@ def query_transactions_for_pool(pool_address: str, num_queries: int):
 
             amount = sign * tx[key]['amount']
             block = tx['confirmed-round']
-            yield PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'])
+            yield PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'], tx['round-time'])
 
         except Exception as e:
             raise Exception(json.dumps(tx, indent=4)) from e
@@ -55,16 +61,13 @@ def query_transactions_for_pool(pool_address: str, num_queries: int):
 # Logged swap for a pool, excluding redeeming amounts
 @dataclass
 class Swap:
-    # Asset id going to the pool
-    asset_in: int
-    # Amount going the pool
-    amount_in: int
-    # Asset id going to the counterparty
-    asset_out: int
-    # Amount going to the counterparty
-    amount_out: int
+    # Signed volume of asset 1 (positive goes into the pool)
+    asset1_amount: int
+    # Signed volume of asset 2 (positive goes into the pool)
+    asset2_amount: int
     counterparty: str
     block: int
+    time: int
 
 
 # TODO Check this is valid, does it also hold for pools without Algo?
@@ -72,23 +75,23 @@ def is_fee_payment(tx: PoolTransaction):
     return tx.asset_id == 0 and tx.amount == 2000 and tx.tx_type == 'pay'
 
 
-class SwapScraper:
-    def __init__(self, asset1_id, asset2_id):
+class SwapScraper(DataScraper):
+    def __init__(self, client:TinymanClient, asset1_id:int, asset2_id:int):
 
-        client = TinymanMainnetClient()
         pool = client.fetch_pool(asset1_id, asset2_id)
         assert pool.exists
 
         self.liquidity_asset = pool.liquidity_asset.id
-        self.assets = [asset1_id, asset2_id]
+        self.asset1_id = asset1_id
+        self.asset2_id = asset2_id
         self.address = pool.address
 
-    def scrape(self, num_queries: int):
+    def scrape(self, timestamp_min: int, num_queries: Optional[int]=None):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
             return tx.counterparty == transaction_out.counterparty \
                    and tx.asset_id != transaction_out.asset_id \
-                   and tx.asset_id in self.assets \
+                   and tx.asset_id in [self.asset1_id, self.asset2_id] \
                    and not is_fee_payment(tx)
 
         transaction_out: Optional[PoolTransaction] = None
@@ -96,16 +99,28 @@ class SwapScraper:
 
         for tx in query_transactions_for_pool(self.address, num_queries):
 
+            if tx.time < timestamp_min:
+                break
+
             if transaction_out:
                 # We recorded a transaction out and in, looking for a fee payment
                 if transaction_in:
                     if is_fee_payment(tx) and tx.counterparty == transaction_in.counterparty:
-                        yield Swap(asset_in=transaction_in.asset_id,
-                                   asset_out=transaction_out.asset_id,
-                                   amount_in=transaction_in.amount,
-                                   amount_out=-transaction_out.amount,
+                        if transaction_in.asset_id == self.asset1_id and transaction_out.asset_id == self.asset2_id:
+                            asset1_amount = transaction_in.amount
+                            asset2_amount = transaction_out.amount
+                        elif transaction_in.asset_id == self.asset2_id and transaction_out.asset_id == self.asset1_id:
+                            asset2_amount = transaction_in.amount
+                            asset1_amount = transaction_out.amount
+                        else:
+                            raise ValueError
+                        assert transaction_in.amount > 0 and transaction_out.amount < 0
+
+                        yield Swap(asset1_amount=asset1_amount,
+                                   asset2_amount=asset2_amount,
                                    counterparty=tx.counterparty,
-                                   block=tx.block
+                                   block=tx.block,
+                                   time=tx.time
                                    )
                     transaction_out = None
                     transaction_in = None
@@ -118,5 +133,14 @@ class SwapScraper:
                     else:
                         transaction_out = None
             else:
-                if tx.amount < 0 and tx.asset_id in self.assets:
+                if tx.amount < 0 and tx.asset_id in [self.asset1_id, self.asset2_id]:
                     transaction_out = tx
+
+
+class VolumeCacher(DataCacher):
+
+    def __init__(self, universe_cache_name: str, date_min: datetime):
+        super().__init__(universe_cache_name, date_min, VOLUME_CACHES_BASEDIR)
+
+    def make_scraper(self, asset1_id: int, asset2_id: int):
+        return SwapScraper(self.client, asset1_id, asset2_id)

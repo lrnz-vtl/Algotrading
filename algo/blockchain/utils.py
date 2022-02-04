@@ -10,8 +10,11 @@ def query_transactions(params: dict, num_queries: Optional[int]):
 
     i = 0
     while resp and (num_queries is None or i < num_queries):
+        if 'transactions' not in resp:
+            raise KeyError(f"'transactions' key not in resp:{resp}")
         for tx in resp['transactions']:
             yield tx
+
         if 'next-token' in resp:
             resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
         else:

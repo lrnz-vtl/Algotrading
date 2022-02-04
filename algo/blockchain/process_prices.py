@@ -4,9 +4,14 @@ from typing import Optional
 from algo.blockchain.utils import query_transactions
 from base64 import b64decode, b64encode
 import warnings
-import datetime
 import time
 from tinyman.v1.client import TinymanClient
+from algo.blockchain.base import DataScraper
+from algo.blockchain.cache import DataCacher
+from definitions import ROOT_DIR
+import datetime
+
+PRICE_CACHES_BASEDIR = f'{ROOT_DIR}/caches/prices'
 
 def get_state_int(state, key):
     if type(key) == str:
@@ -39,7 +44,7 @@ def get_pool_state_txn(tx: dict):
     return PoolState(tx['round-time'], s1, s2)
 
 
-class PriceScraper:
+class PriceScraper(DataScraper):
     def __init__(self, client: TinymanClient, asset1_id: int, asset2_id: int):
 
         pool = client.fetch_pool(asset1_id, asset2_id)
@@ -49,8 +54,9 @@ class PriceScraper:
         self.assets = [asset1_id, asset2_id]
         self.address = pool.address
 
-    def query_pool_state_history(self, num_queries: Optional[int], timestamp_min: int = 0):
+    def scrape(self, timestamp_min: int, num_queries: Optional[int] = None):
         prev_time = None
+
         for tx in query_transactions(params={'address': self.address}, num_queries=num_queries):
             if tx['tx-type'] != 'appl':
                 continue
@@ -63,3 +69,10 @@ class PriceScraper:
             yield ps
 
 
+class PriceCacher(DataCacher):
+
+    def __init__(self, universe_cache_name: str, date_min: datetime):
+        super().__init__(universe_cache_name, date_min, PRICE_CACHES_BASEDIR)
+
+    def make_scraper(self, asset1_id: int, asset2_id: int):
+        return PriceScraper(self.client, asset1_id, asset2_id)

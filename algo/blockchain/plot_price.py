@@ -11,7 +11,7 @@ def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int 
     ps = PriceScraper(client, asset1_id, asset2_id)
     pool = client.fetch_pool(asset1=asset1_id, asset2=asset2_id)
 
-    df = generator_to_df(ps.query_pool_state_history(num_queries, timestamp))
+    df = generator_to_df(ps.scrape(num_queries, timestamp))
 
     if not inverse:
         price = df.asset2_reserves/df.asset1_reserves
