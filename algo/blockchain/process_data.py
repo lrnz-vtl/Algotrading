@@ -46,11 +46,13 @@ def query_transactions(params: dict, num_queries: int):
         resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
         i += 1
 
-def build_pool_data(pool_address: str, num_queries: int):
+def query_pool_state_history(pool_address: str, num_queries: int, timestamp: int = 0):
     prev_time = None
     for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
         if tx['tx-type']!='appl':
             continue
+        if tx['round-time'] < timestamp_min:
+            break
         ps = get_pool_state_txn(tx)
         if not ps or (prev_time and prev_time==ps.time):
             continue
