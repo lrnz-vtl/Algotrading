@@ -19,11 +19,11 @@ class PoolState:
     asset1_reserves: int
     asset2_reserves: int
 
-def get_pool_state_address(pool_address: str):
+def get_pool_state(pool_address: str):
     query = f'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
     resp = requests.get(query).json()['account']['apps-local-state'][0]
     state = {y['key']: y['value'] for y in resp['key-value']}
-    return PoolState(time.time(), get_state_int(state, 's1'), get_state_int(state,'s2'))
+    return PoolState(int(time.time()), get_state_int(state, 's1'), get_state_int(state,'s2'))
 
 def get_pool_state_txn(tx: dict):
     if tx['tx-type'] != 'appl':
