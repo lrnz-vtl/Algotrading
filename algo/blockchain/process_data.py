@@ -1,5 +1,5 @@
 import requests, warnings
-import json
+import json, time
 from dataclasses import dataclass
 from typing import Optional
 from tinyman.v1.client import TinymanMainnetClient
@@ -20,16 +20,20 @@ class PoolState:
     asset2_reserves: int
 
 def get_pool_state_address(pool_address: str):
-    query = 'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
+    query = f'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
     resp = requests.get(query).json()['account']['apps-local-state'][0]
     state = {y['key']: y['value'] for y in resp['key-value']}
-    return get_state_int(state, 's1'), get_state_int(state,'s2')
+    return PoolState(time.time(), get_state_int(state, 's1'), get_state_int(state,'s2'))
 
 def get_pool_state_txn(tx: dict):
     if tx['tx-type'] != 'appl':
         warnings.warn('Attempting to extract pool state from non application call')
     state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]['delta']}
-    return get_state_int(state, 's1'), get_state_int(state,'s2')
+    s1 = get_state_int(state, 's1')
+    s2 = get_state_int(state, 's2')
+    if s1 <= 0 or s2 <= 0:
+        return None
+    return PoolState(tx['round-time'], s1, s2)
 
 def query_transactions(params: dict, num_queries: int):
     query = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
@@ -43,13 +47,15 @@ def query_transactions(params: dict, num_queries: int):
         i += 1
 
 def build_pool_data(pool_address: str, num_queries: int):
+    prev_time = None
     for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
         if tx['tx-type']!='appl':
             continue
-        s1, s2 = get_pool_state_txn(tx)
-        if s1 > 0 and s2 > 0:
-            #if not time or t[-1]<tx['round-time']:
-            yield PoolState(tx['round-time'], s1, s2)
+        ps = get_pool_state_txn(tx)
+        if not ps or (prev_time and prev_time==ps.time):
+            continue
+        prev_time = ps.time
+        yield ps
 
 def query_transactions_for_pool(pool_address: str, num_queries: int):
     for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
