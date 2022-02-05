@@ -11,25 +11,27 @@ import pandas as pd
 import datetime
 from pathlib import Path
 import glob
-from typing import Callable
+from typing import Callable, Optional
 from abc import ABC, abstractmethod
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
-
-
-
 class DataCacher(ABC):
     def __init__(self, universe_cache_name: str,
-                 date_min: datetime,
-                 cache_basedir: str):
+                 cache_basedir: str,
+                 client: TinymanClient,
+                 date_min: datetime.datetime,
+                 date_max: Optional[datetime.datetime]):
 
-        self.client = TinymanMainnetClient()
+        self.client = client
         self.pools = [(x.asset1_id, x.asset2_id) for x in Universe.from_cache(universe_cache_name).pools]
         self.date_min = date_min
-        assert date_min == datetime.datetime(year=date_min.year, month=date_min.month, day=date_min.day), \
-            f"date_min = {date_min} argument must be date without hours, minutes etc."
+        self.date_max = date_max
+        for date in date_min, date_max:
+            if date is not None:
+                assert date == datetime.datetime(year=date.year, month=date.month, day=date.day), \
+                    f"date_min, date_max = {date_min}, {date_max} must be dates without hours, minutes etc."
         self.cache_basedir = cache_basedir
 
     @abstractmethod
@@ -58,24 +60,31 @@ class DataCacher(ABC):
 
         existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.parquet')}
 
-        utcnow = datetime.datetime.utcnow()
-        today_date = utcnow.replace(hour=0, minute=0, second=0, microsecond=0)
+        if self.date_max is None:
+            utcnow = datetime.datetime.utcnow()
+            date_max = utcnow.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            date_max = self.date_max
+
         date_min = self.date_min
-        while date_min < today_date:
+        while date_min < date_max:
             if date_min not in existing_dates:
                 break
             date_min = date_min + datetime.timedelta(days=1)
 
-        if date_min == today_date:
+        if date_min == date_max:
             print(f'Skipping assets {assets[0], assets[1]} because all data is present in the cache')
             return
         else:
-            print(f'Found minimun date to scrape for assets {assets[0], assets[1]} = {date_min}')
+            print(f'Found minimum date to scrape for assets {assets[0], assets[1]} = {date_min}')
 
         scraper = self.make_scraper(assets[0], assets[1])
         df = generator_to_df(scraper.scrape(num_queries=None,
-                                       timestamp_min=datetime_to_int(date_min))
+                                            timestamp_min=datetime_to_int(date_min),
+                                            before_time=date_max)
                              )
+        if df.empty:
+            return
 
         def cache_if_new(daydf: pd.DataFrame, date):
             fname = file_name(date)
@@ -87,14 +96,9 @@ class DataCacher(ABC):
 
         dates = df['time'].dt.date
 
-        # Exclude the current day as it's not complete
-        full_days = list(dates.sort_values().unique()[:-1])
+        df['time'] = df['time'].view(dtype=np.int64) // 1000000000
 
-        idx = dates.isin(full_days)
-        selected_dates = dates[idx]
-        df_to_cache = df[dates.isin(full_days)]
-        df_to_cache['time'] = df_to_cache['time'].view(dtype=np.int64) // 1000000000
-
-        df_to_cache.groupby(selected_dates).apply(lambda x: cache_if_new(x, x.name))
+        # TODO check this is correct (we do not exclude the current day because we have filtered it in the query
+        df.groupby(dates).apply(lambda x: cache_if_new(x, x.name))
 
 

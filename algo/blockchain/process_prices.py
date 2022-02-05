@@ -48,16 +48,17 @@ class PriceScraper(DataScraper):
     def __init__(self, client: TinymanClient, asset1_id: int, asset2_id: int):
 
         pool = client.fetch_pool(asset1_id, asset2_id)
-        assert pool.exists
 
+        assert pool.exists
         self.liquidity_asset = pool.liquidity_asset.id
+
         self.assets = [asset1_id, asset2_id]
         self.address = pool.address
 
-    def scrape(self, timestamp_min: int, num_queries: Optional[int] = None):
+    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
         prev_time = None
 
-        for tx in query_transactions(params={'address': self.address}, num_queries=num_queries):
+        for tx in query_transactions(params={'address': self.address}, num_queries=num_queries, before_time=before_time):
             if tx['tx-type'] != 'appl':
                 continue
             if tx['round-time'] < timestamp_min:
@@ -71,8 +72,16 @@ class PriceScraper(DataScraper):
 
 class PriceCacher(DataCacher):
 
-    def __init__(self, universe_cache_name: str, date_min: datetime):
-        super().__init__(universe_cache_name, date_min, PRICE_CACHES_BASEDIR)
+    def __init__(self, client:TinymanClient,
+                 universe_cache_name: str,
+                 date_min: datetime.datetime,
+                 date_max: Optional[datetime.datetime]):
+
+        super().__init__(universe_cache_name,
+                         PRICE_CACHES_BASEDIR,
+                         client,
+                         date_min,
+                         date_max)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
         return PriceScraper(self.client, asset1_id, asset2_id)
