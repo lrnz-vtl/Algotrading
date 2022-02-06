@@ -1,3 +1,5 @@
+import aiohttp
+
 from algo.universe.universe import Universe
 from tinyman.v1.client import TinymanMainnetClient, TinymanClient
 from algo.blockchain.base import DataScraper
@@ -39,16 +41,16 @@ class DataCacher(ABC):
     def make_scraper(self, asset1_id:int, asset2_id:int):
         pass
 
-    async def cache(self, cache_name: str):
+    def cache(self, cache_name: str):
         basedir = os.path.join(self.cache_basedir, cache_name)
         os.makedirs(basedir, exist_ok=True)
 
-        # for assets in self.pools:
-        #     self._cache_pool(assets, basedir)
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                await asyncio.gather(*[self._cache_pool(session, assets, basedir) for assets in self.pools])
+        asyncio.run(main())
 
-        await asyncio.gather(*[self._cache_pool(assets, basedir) for assets in self.pools])
-
-    async def _cache_pool(self, assets, basedir):
+    async def _cache_pool(self, session, assets, basedir):
         assets = list(sorted(assets))
         cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
         os.makedirs(cache_dir, exist_ok=True)
@@ -93,9 +95,10 @@ class DataCacher(ABC):
             return
 
         data = []
-        async for row in scraper.scrape(num_queries=None,
-                                            timestamp_min=datetime_to_int(date_min),
-                                            before_time=date_max):
+        async for row in scraper.scrape(session=session,
+                                        num_queries=None,
+                                        timestamp_min=datetime_to_int(date_min),
+                                        before_time=date_max):
             data.append(row)
         df = generator_to_df(data)
 

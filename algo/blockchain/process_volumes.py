@@ -1,14 +1,16 @@
 import json
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.utils import query_transactions
+from algo.blockchain.requests import query_transactions
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.base import DataScraper
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
+import aiohttp
 
 VOLUME_CACHES_BASEDIR = f'{ROOT_DIR}/caches/volumes'
+
 
 @dataclass
 class PoolTransaction:
@@ -20,8 +22,16 @@ class PoolTransaction:
     time: int
 
 
-def query_transactions_for_pool(pool_address: str, num_queries: int):
-    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
+async def query_transactions_for_pool(session: aiohttp.ClientSession,
+                                pool_address: str,
+                                num_queries: int,
+                                before_time:Optional[datetime.datetime]
+                                ):
+
+    async for tx in query_transactions(session=session,
+                                 params={'address': pool_address},
+                                 num_queries=num_queries,
+                                 before_time=before_time):
 
         try:
             if tx['tx-type'] == 'axfer':
@@ -86,7 +96,10 @@ class SwapScraper(DataScraper):
         self.asset2_id = asset2_id
         self.address = pool.address
 
-    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
+    async def scrape(self, session:aiohttp.ClientSession,
+               timestamp_min: int,
+               before_time:Optional[datetime.datetime],
+               num_queries: Optional[int] = None):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
             return tx.counterparty == transaction_out.counterparty \
@@ -97,7 +110,7 @@ class SwapScraper(DataScraper):
         transaction_out: Optional[PoolTransaction] = None
         transaction_in: Optional[PoolTransaction] = None
 
-        for tx in query_transactions_for_pool(self.address, num_queries):
+        async for tx in query_transactions_for_pool(session, self.address, num_queries, before_time=before_time):
 
             if tx.time < timestamp_min:
                 break

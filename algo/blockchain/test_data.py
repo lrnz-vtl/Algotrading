@@ -1,12 +1,15 @@
 import unittest
 import logging
+
+import aiohttp
+
 from algo.blockchain.process_volumes import SwapScraper
 from algo.blockchain.process_prices import PriceScraper
 from algo.blockchain.utils import datetime_to_int
 from tinyman.v1.client import TinymanMainnetClient
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
 import datetime
-
+import asyncio
 
 class TestData(unittest.TestCase):
 
@@ -24,8 +27,11 @@ class TestData(unittest.TestCase):
         asset2 = 470842789
 
         sc = SwapScraper(self.client, asset1, asset2)
-        for tx in sc.scrape(datetime_to_int(self.date_min), num_queries=n_queries):
-            print(tx)
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                async for tx in sc.scrape(session, datetime_to_int(self.date_min), num_queries=n_queries, before_time=None):
+                    print(tx)
+        asyncio.run(main())
 
     def test_prices(self, n_queries=10):
         asset1 = 0
@@ -36,8 +42,11 @@ class TestData(unittest.TestCase):
 
         ps = PriceScraper(self.client, asset1, asset2)
 
-        for tx in ps.scrape(datetime_to_int(self.date_min), num_queries=n_queries):
-            print(tx)
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                async for tx in ps.scrape(session, datetime_to_int(self.date_min), num_queries=n_queries, before_time=None):
+                    print(tx)
+        asyncio.run(main())
 
     def test_old_prices(self, n_queries=10):
         asset1 = 0
@@ -50,5 +59,8 @@ class TestData(unittest.TestCase):
 
         ps = PriceScraper(client, asset1, asset2)
 
-        for tx in ps.scrape(0, num_queries=n_queries):
-            print(tx)
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                async for tx in ps.scrape(session, 0, num_queries=n_queries, before_time=None):
+                    print(tx)
+        asyncio.run(main())
