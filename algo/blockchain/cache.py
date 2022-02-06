@@ -13,6 +13,7 @@ from pathlib import Path
 import glob
 from typing import Callable, Optional
 from abc import ABC, abstractmethod
+import asyncio
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -38,14 +39,16 @@ class DataCacher(ABC):
     def make_scraper(self, asset1_id:int, asset2_id:int):
         pass
 
-    def cache(self, cache_name: str):
+    async def cache(self, cache_name: str):
         basedir = os.path.join(self.cache_basedir, cache_name)
         os.makedirs(basedir, exist_ok=True)
 
-        for assets in self.pools:
-            self._cache_pool(assets, basedir)
+        # for assets in self.pools:
+        #     self._cache_pool(assets, basedir)
 
-    def _cache_pool(self, assets, basedir):
+        await asyncio.gather(*[self._cache_pool(assets, basedir) for assets in self.pools])
+
+    async def _cache_pool(self, assets, basedir):
         assets = list(sorted(assets))
         cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
         os.makedirs(cache_dir, exist_ok=True)
@@ -58,7 +61,7 @@ class DataCacher(ABC):
             date = datetime.datetime.strptime(datestr, '%Y-%m-%d')
             return date
 
-        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.parquet')}
+        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.done')}
 
         if self.date_max is None:
             utcnow = datetime.datetime.utcnow()
@@ -78,27 +81,36 @@ class DataCacher(ABC):
         else:
             print(f'Found minimum date to scrape for assets {assets[0], assets[1]} = {date_min}')
 
+        date = date_min
+        dates_to_fetch = [date]
+        while date < date_max:
+            dates_to_fetch.append(date)
+            date = date + datetime.timedelta(days=1)
+
         scraper = self.make_scraper(assets[0], assets[1])
-        df = generator_to_df(scraper.scrape(num_queries=None,
-                                            timestamp_min=datetime_to_int(date_min),
-                                            before_time=date_max)
-                             )
-        if df.empty:
+        if scraper is None:
+            print(f'Pool for assets {assets[0], assets[1]} does not exist')
             return
 
-        def cache_if_new(daydf: pd.DataFrame, date):
+        data = []
+        async for row in scraper.scrape(num_queries=None,
+                                            timestamp_min=datetime_to_int(date_min),
+                                            before_time=date_max):
+            data.append(row)
+        df = generator_to_df(data)
+
+        def cache_day_df(daydf: pd.DataFrame, date):
             fname = file_name(date)
-            if os.path.exists(fname):
-                pass
-            else:
-                table = pa.Table.from_pandas(daydf)
-                pq.write_table(table, fname)
+            table = pa.Table.from_pandas(daydf)
+            pq.write_table(table, fname)
 
-        dates = df['time'].dt.date
+        if not df.empty:
+            dates = df['time'].dt.date
+            df['time'] = df['time'].view(dtype=np.int64) // 1000000000
+            df.groupby(dates).apply(lambda x: cache_day_df(x, x.name))
 
-        df['time'] = df['time'].view(dtype=np.int64) // 1000000000
+        for date in dates_to_fetch:
+            Path(os.path.join(cache_dir, f'{date.date()}.done')).touch()
 
-        # TODO check this is correct (we do not exclude the current day because we have filtered it in the query
-        df.groupby(dates).apply(lambda x: cache_if_new(x, x.name))
 
 

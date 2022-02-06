@@ -6,5 +6,5 @@ import datetime
 class DataScraper(ABC):
 
     @abstractmethod
-    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
+    async def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
         pass

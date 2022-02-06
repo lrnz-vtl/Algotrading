@@ -1,6 +1,7 @@
 import datetime
 from algo.blockchain.process_prices import PriceCacher
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
+import asyncio
 
 universe_cache_name = '20220202-110531'
 
@@ -16,5 +17,5 @@ pc = PriceCacher(client=TinymanOldnetClient(),
                  date_min=date_min,
                  date_max=date_max
                  )
-pc.cache(cache_name)
+asyncio.run(pc.cache(cache_name))
 

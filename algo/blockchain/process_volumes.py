@@ -86,7 +86,7 @@ class SwapScraper(DataScraper):
         self.asset2_id = asset2_id
         self.address = pool.address
 
-    def scrape(self, timestamp_min: int, num_queries: Optional[int]=None):
+    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
             return tx.counterparty == transaction_out.counterparty \
