@@ -1,7 +1,9 @@
+import aiohttp
+
 import requests
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.utils import query_transactions
+from algo.blockchain.requests import query_transactions
 from base64 import b64decode, b64encode
 import warnings
 import time
@@ -11,7 +13,9 @@ from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
 
+
 PRICE_CACHES_BASEDIR = f'{ROOT_DIR}/caches/prices'
+
 
 def get_state_int(state, key):
     if type(key) == str:
@@ -36,11 +40,18 @@ def get_pool_state(pool_address: str):
 def get_pool_state_txn(tx: dict):
     if tx['tx-type'] != 'appl':
         warnings.warn('Attempting to extract pool state from non application call')
-    state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]['delta']}
+
+    try:
+        state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]['delta']}
+    except KeyError as e:
+        # Looks like this can have a "global-state-delta" instead
+        return None
+
     s1 = get_state_int(state, 's1')
     s2 = get_state_int(state, 's2')
     if s1 is None or s2 is None:
         return None
+
     return PoolState(tx['round-time'], s1, s2)
 
 
@@ -55,10 +66,16 @@ class PriceScraper(DataScraper):
         self.assets = [asset1_id, asset2_id]
         self.address = pool.address
 
-    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int] = None):
+    async def scrape(self, session:aiohttp.ClientSession,
+                     timestamp_min: int,
+                     before_time:Optional[datetime.datetime],
+                     num_queries: Optional[int] = None):
         prev_time = None
 
-        for tx in query_transactions(params={'address': self.address}, num_queries=num_queries, before_time=before_time):
+        async for tx in query_transactions(session=session,
+                                           params={'address': self.address},
+                                           num_queries=num_queries,
+                                           before_time=before_time):
             if tx['tx-type'] != 'appl':
                 continue
             if tx['round-time'] < timestamp_min:
@@ -84,4 +101,7 @@ class PriceCacher(DataCacher):
                          date_max)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
-        return PriceScraper(self.client, asset1_id, asset2_id)
+        try:
+            return PriceScraper(self.client, asset1_id, asset2_id)
+        except AssertionError as e:
+            return None

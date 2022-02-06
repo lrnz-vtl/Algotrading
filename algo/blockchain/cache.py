@@ -1,6 +1,7 @@
+import aiohttp
+
 from algo.universe.universe import Universe
-from tinyman.v1.client import TinymanMainnetClient, TinymanClient
-from algo.blockchain.base import DataScraper
+from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -12,6 +13,7 @@ from pathlib import Path
 import glob
 from typing import Callable, Optional
 from abc import ABC, abstractmethod
+import asyncio
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -41,10 +43,12 @@ class DataCacher(ABC):
         basedir = os.path.join(self.cache_basedir, cache_name)
         os.makedirs(basedir, exist_ok=True)
 
-        for assets in self.pools:
-            self._cache_pool(assets, basedir)
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                await asyncio.gather(*[self._cache_pool(session, assets, basedir) for assets in self.pools])
+        asyncio.run(main())
 
-    def _cache_pool(self, assets, basedir):
+    async def _cache_pool(self, session, assets, basedir):
         assets = list(sorted(assets))
         cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
         os.makedirs(cache_dir, exist_ok=True)
@@ -88,10 +92,13 @@ class DataCacher(ABC):
             print(f'Pool for assets {assets[0], assets[1]} does not exist')
             return
 
-        gen = scraper.scrape(num_queries=None,
-                             timestamp_min=datetime_to_int(date_min),
-                             before_time=date_max)
-        df = generator_to_df(gen)
+        data = []
+        async for row in scraper.scrape(session=session,
+                                        num_queries=None,
+                                        timestamp_min=datetime_to_int(date_min),
+                                        before_time=date_max):
+            data.append(row)
+        df = generator_to_df(data)
 
         def cache_day_df(daydf: pd.DataFrame, date):
             fname = file_name(date)
