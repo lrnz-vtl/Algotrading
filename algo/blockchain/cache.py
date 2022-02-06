@@ -4,7 +4,6 @@ from algo.blockchain.base import DataScraper
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa
 import pyarrow.parquet as pq
-from definitions import ROOT_DIR
 import numpy as np
 import os
 import pandas as pd
@@ -58,7 +57,7 @@ class DataCacher(ABC):
             date = datetime.datetime.strptime(datestr, '%Y-%m-%d')
             return date
 
-        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.parquet')}
+        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.done')}
 
         if self.date_max is None:
             utcnow = datetime.datetime.utcnow()
@@ -78,27 +77,31 @@ class DataCacher(ABC):
         else:
             print(f'Found minimum date to scrape for assets {assets[0], assets[1]} = {date_min}')
 
+        date = date_min
+        dates_to_fetch = [date]
+        while date < date_max:
+            dates_to_fetch.append(date)
+            date = date + datetime.timedelta(days=1)
+
         scraper = self.make_scraper(assets[0], assets[1])
-        df = generator_to_df(scraper.scrape(num_queries=None,
-                                            timestamp_min=datetime_to_int(date_min),
-                                            before_time=date_max)
-                             )
-        if df.empty:
+        if scraper is None:
+            print(f'Pool for assets {assets[0], assets[1]} does not exist')
             return
 
-        def cache_if_new(daydf: pd.DataFrame, date):
+        gen = scraper.scrape(num_queries=None,
+                             timestamp_min=datetime_to_int(date_min),
+                             before_time=date_max)
+        df = generator_to_df(gen)
+
+        def cache_day_df(daydf: pd.DataFrame, date):
             fname = file_name(date)
-            if os.path.exists(fname):
-                pass
-            else:
-                table = pa.Table.from_pandas(daydf)
-                pq.write_table(table, fname)
+            table = pa.Table.from_pandas(daydf)
+            pq.write_table(table, fname)
 
-        dates = df['time'].dt.date
+        if not df.empty:
+            dates = df['time'].dt.date
+            df['time'] = df['time'].view(dtype=np.int64) // 1000000000
+            df.groupby(dates).apply(lambda x: cache_day_df(x, x.name))
 
-        df['time'] = df['time'].view(dtype=np.int64) // 1000000000
-
-        # TODO check this is correct (we do not exclude the current day because we have filtered it in the query
-        df.groupby(dates).apply(lambda x: cache_if_new(x, x.name))
-
-
+        for date in dates_to_fetch:
+            Path(os.path.join(cache_dir, f'{date.date()}.done')).touch()

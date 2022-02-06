@@ -24,7 +24,7 @@ class TestData(unittest.TestCase):
         asset2 = 470842789
 
         sc = SwapScraper(self.client, asset1, asset2)
-        for tx in sc.scrape(datetime_to_int(self.date_min), num_queries=n_queries):
+        for tx in sc.scrape(datetime_to_int(self.date_min), num_queries=n_queries, before_time=None):
             print(tx)
 
     def test_prices(self, n_queries=10):
@@ -36,7 +36,7 @@ class TestData(unittest.TestCase):
 
         ps = PriceScraper(self.client, asset1, asset2)
 
-        for tx in ps.scrape(datetime_to_int(self.date_min), num_queries=n_queries):
+        for tx in ps.scrape(datetime_to_int(self.date_min), num_queries=n_queries, before_time=None):
             print(tx)
 
     def test_old_prices(self, n_queries=10):
@@ -50,5 +50,5 @@ class TestData(unittest.TestCase):
 
         ps = PriceScraper(client, asset1, asset2)
 
-        for tx in ps.scrape(0, num_queries=n_queries):
+        for tx in ps.scrape(0, num_queries=n_queries, before_time=None):
             print(tx)

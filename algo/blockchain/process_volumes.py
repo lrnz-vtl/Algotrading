@@ -20,8 +20,8 @@ class PoolTransaction:
     time: int
 
 
-def query_transactions_for_pool(pool_address: str, num_queries: int):
-    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries):
+def query_transactions_for_pool(pool_address: str, num_queries: int, before_time:Optional[datetime.datetime]):
+    for tx in query_transactions(params={'address': pool_address}, num_queries=num_queries, before_time=before_time):
 
         try:
             if tx['tx-type'] == 'axfer':
@@ -86,7 +86,7 @@ class SwapScraper(DataScraper):
         self.asset2_id = asset2_id
         self.address = pool.address
 
-    def scrape(self, timestamp_min: int, num_queries: Optional[int]=None):
+    def scrape(self, timestamp_min: int, before_time:Optional[datetime.datetime], num_queries: Optional[int]=None):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
             return tx.counterparty == transaction_out.counterparty \
@@ -97,7 +97,7 @@ class SwapScraper(DataScraper):
         transaction_out: Optional[PoolTransaction] = None
         transaction_in: Optional[PoolTransaction] = None
 
-        for tx in query_transactions_for_pool(self.address, num_queries):
+        for tx in query_transactions_for_pool(self.address, num_queries, before_time=before_time):
 
             if tx.time < timestamp_min:
                 break
