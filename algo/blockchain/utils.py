@@ -14,3 +14,8 @@ def generator_to_df(gen, time_columns=('time',)):
         for col in time_columns:
             df[col] = pd.to_datetime(df[col], unit='s', utc=True)
     return df
+
+
+def timestamp_to_5min(time_col: pd.Series):
+    time_5min = (time_col // 300) * 300
+    return pd.to_datetime(time_5min, unit='s', utc=True)

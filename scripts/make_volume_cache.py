@@ -1,19 +1,24 @@
 import datetime
 from algo.blockchain.process_volumes import VolumeCacher
 from tinyman.v1.client import TinymanMainnetClient
+import argparse
 
-universe_cache_name = '20220202-110531'
+if __name__ == '__main__':
 
-cache_name = 'test'
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-u', dest='universe_cache_name', type=str, required=True)
+        parser.add_argument('-c', dest='cache_name', type=str, required=True)
 
-date_min = datetime.datetime(year=2022, month=1, day=20)
+        args = parser.parse_args()
 
-client = TinymanMainnetClient()
-pc = VolumeCacher(
-        client=client,
-        universe_cache_name=universe_cache_name,
-        date_min=date_min,
-        date_max=None
-)
-pc.cache(cache_name)
+        date_min = datetime.datetime(year=2022, month=1, day=20)
+
+        client = TinymanMainnetClient()
+        pc = VolumeCacher(
+                client=client,
+                universe_cache_name=args.universe_cache_name,
+                date_min=date_min,
+                date_max=None
+        )
+        pc.cache(args.cache_name)
 

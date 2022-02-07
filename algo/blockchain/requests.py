@@ -3,7 +3,10 @@ import datetime
 import aiohttp
 
 
-async def query_transactions(session:aiohttp.ClientSession, params: dict, num_queries: Optional[int], before_time: Optional[datetime.datetime]):
+async def query_transactions(session:aiohttp.ClientSession,
+                             params: dict,
+                             num_queries: Optional[int],
+                             before_time: Optional[datetime.datetime]):
 
     query = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
 
@@ -24,7 +27,6 @@ async def query_transactions(session:aiohttp.ClientSession, params: dict, num_qu
         if 'next-token' in resp:
             async with session.get(query, params={**params, **{'next': resp['next-token']}}) as resp:
                 resp = await resp.json()
-            # resp = requests.get(query, params={**params, **{'next': resp['next-token']}}).json()
         else:
             resp = None
         i += 1

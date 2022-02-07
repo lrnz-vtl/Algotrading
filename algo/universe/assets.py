@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from algo.universe.hardcoded import ALGO_DECIMALS
 
 
+def get_asset_data(asset_id: int):
+    res = requests.get(f'https://algoindexer.algoexplorerapi.io/v2/assets/{asset_id}').json()
+    return res['asset']
+
 @dataclass
 class AssetInfo:
     id: int
@@ -120,9 +124,8 @@ class AssetMarketDataStore:
 
         asset_info = self.client.fetch_asset(asset_id)
 
-        res = requests.get(f'https://algoindexer.algoexplorerapi.io/v2/assets/{asset_info.id}').json()
-
-        total_supply = res['asset']['params']['total']
+        asset_data = get_asset_data(asset_info.id)
+        total_supply = asset_data['params']['total']
 
         pool_info = self.client.fetch_pool(0, asset_id)
 

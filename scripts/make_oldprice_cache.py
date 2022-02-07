@@ -1,20 +1,23 @@
 import datetime
 from algo.blockchain.process_prices import PriceCacher
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
+import argparse
 
-universe_cache_name = '20220202-110531'
+if __name__ == '__main__':
 
-cache_name = '20220205_prehack'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', dest='universe_cache_name', type=str, required=True)
+    parser.add_argument('-c', dest='cache_name', type=str, required=True)
 
-date_min = datetime.datetime(year=2021, month=10, day=8)
-date_max = datetime.datetime(year=2021, month=12, day=31)
+    args = parser.parse_args()
 
-print(date_max.isoformat())
+    date_min = datetime.datetime(year=2021, month=10, day=8)
+    date_max = datetime.datetime(year=2021, month=12, day=31)
 
-pc = PriceCacher(client=TinymanOldnetClient(),
-                 universe_cache_name=universe_cache_name,
-                 date_min=date_min,
-                 date_max=date_max
-                 )
-pc.cache(cache_name)
+    pc = PriceCacher(client=TinymanOldnetClient(),
+                     universe_cache_name=args.universe_cache_name,
+                     date_min=date_min,
+                     date_max=date_max
+                     )
+    pc.cache(args.cache_name)
 
