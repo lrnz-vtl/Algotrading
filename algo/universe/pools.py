@@ -22,7 +22,33 @@ def nullable_strtofloat(x):
     else:
         return float(x)
 
+@dataclass
+class PoolId:
+    asset1_id: int
+    asset2_id: int
+    address: str
 
+class OldPoolInfoStore:
+    def __init__(self):
+        self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TM1POOL'
+        self.pools = self.find_old_pools()
+
+    def find_old_pools(self):
+        pool_urls = requests.get(url=self.source).json()['assets']
+        pools = list()
+        for p in pool_urls:
+            addr = p['params']['creator']
+            asas = list(Portfolio(addr).coins.keys())
+            asas.sort()
+            if (len(asas)>3):
+                filtered=filter(lambda idx: idx!=0, asas)
+                asas=list(filtered)
+            pools.append(PoolId(asas[1], asas[0], addr))
+        return pools
+
+    def asdicts(self):
+        return {'source': self.source, 'pools': [dataclasses.asdict(x) for x in self.pools]}
+    
 @dataclass
 class PoolInfo:
     asset1_id: int
