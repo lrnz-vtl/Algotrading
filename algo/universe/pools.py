@@ -4,8 +4,10 @@ import os.path
 
 import algosdk.error
 from tinyman.v1.client import TinymanClient
+from wallets import Portfolio
 from functools import lru_cache
 import logging
+import warnings
 import requests
 from dataclasses import dataclass
 import dataclasses
@@ -28,23 +30,42 @@ class PoolId:
     asset2_id: int
     address: str
 
-class OldPoolInfoStore:
-    def __init__(self):
-        self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TM1POOL'
-        self.pools = self.find_old_pools()
+class QuickPoolInfoStore:
+    def __init__(self, client, old=False):
+        self.client = client
+        if old:
+            self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TM1POOL'
+        else:
+            self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TMPOOL11'
+        self.pools = self.find_all_pools()
 
-    def find_old_pools(self):
-        pool_urls = requests.get(url=self.source).json()['assets']
+    def find_all_pools(self):
+        source=self.source
         pools = list()
-        for p in pool_urls:
-            addr = p['params']['creator']
-            asas = list(Portfolio(addr).coins.keys())
-            asas.sort()
-            if (len(asas)>3):
-                filtered=filter(lambda idx: idx!=0, asas)
-                asas=list(filtered)
-            pools.append(PoolId(asas[1], asas[0], addr))
+        while True:
+            pool_urls = requests.get(url=source).json()
+            for p in pool_urls['assets']:
+                addr = p['params']['creator']
+                asas = list(Portfolio(addr).coins.keys())
+                asas.sort()
+                if (len(asas)>3):
+                    filtered=filter(lambda idx: idx!=0, asas)
+                    asas=list(filtered)
+                if self._check_pool(asas[1], asas[0]):
+                    pools.append(PoolId(asas[1], asas[0], addr))
+            if 'next-token' in pool_urls:
+                print(source)
+                source=f"{self.source}&next={pool_urls['next-token']}"
+            else:
+                break
         return pools
+    
+    def _check_pool(self, p0: int, p1: int):
+        try:
+            return self.client.fetch_pool(p0, p1).exists
+        except KeyError as e:
+            warnings.warning(f"Skipping pool ({p0, p1}) because received KeyError with key {e}")
+            return False
 
     def asdicts(self):
         return {'source': self.source, 'pools': [dataclasses.asdict(x) for x in self.pools]}
