@@ -17,5 +17,6 @@ def generator_to_df(gen, time_columns=('time',)):
 
 
 def timestamp_to_5min(time_col: pd.Series):
-    time_5min = (time_col // 300) * 300
+    # We do not want lookahead in the data, so each 5 minute slice should contain the data for the past, not the future
+    time_5min = ((time_col // 300) + ((time_col % 300) > 0).astype(int)) * 300
     return pd.to_datetime(time_5min, unit='s', utc=True)
