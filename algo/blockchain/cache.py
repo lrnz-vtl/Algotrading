@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import numpy as np
 import os
+import json
 import pandas as pd
 import datetime
 from pathlib import Path
@@ -56,12 +57,17 @@ class DataCacher(ABC):
         def file_name(date):
             return os.path.join(cache_dir, f'{date}.parquet')
 
-        def path_to_date(fname):
-            datestr = Path(fname).name.split('.')[0]
-            date = datetime.datetime.strptime(datestr, '%Y-%m-%d')
-            return date
+        # def path_to_date(fname):
+        #     datestr = Path(fname).name.split('.')[0]
+        #     date = datetime.datetime.strptime(datestr, '%Y-%m-%d')
+        #     return date
 
-        existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.done')}
+        try:
+            with open(f'{cache_dir}.json') as json_file:
+                existing_dates = eval(json.load(json_file))
+        except FileNotFoundError:
+            existing_dates = set()
+        #existing_dates = {path_to_date(fname) for fname in glob.glob(f'{cache_dir}/*.done')}
 
         if self.date_max is None:
             utcnow = datetime.datetime.utcnow()
@@ -110,5 +116,7 @@ class DataCacher(ABC):
             df['time'] = df['time'].view(dtype=np.int64) // 1000000000
             df.groupby(dates).apply(lambda x: cache_day_df(x, x.name))
 
-        for date in dates_to_fetch:
-            Path(os.path.join(cache_dir, f'{date.date()}.done')).touch()
+        with open(f'{cache_dir}.json','w') as fp:
+            json.dump(set(dates_to_fetch), fp, default=str)
+        # for date in dates_to_fetch:
+        #     Path(os.path.join(cache_dir, f'{date.date()}.done')).touch()
