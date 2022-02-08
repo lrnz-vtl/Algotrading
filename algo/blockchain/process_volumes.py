@@ -151,10 +151,10 @@ class SwapScraper(DataScraper):
 
 class VolumeCacher(DataCacher):
 
-    def __init__(self, universe_cache_name: str, client: TinymanClient,
+    def __init__(self, cache_file: str, client: TinymanClient,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
-        super().__init__(universe_cache_name, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
+        super().__init__(cache_file, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
         return SwapScraper(self.client, asset1_id, asset2_id)

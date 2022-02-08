@@ -31,7 +31,15 @@ class PoolId:
     asset2_id: int
     address: str
 
-class QuickPoolInfoStore:
+    @staticmethod
+    def from_dict(r: dict):
+        intkeys = ['asset1_id', 'asset2_id']
+        for key in intkeys:
+            r[key] = int(r[key])
+
+        return PoolId(**r)
+
+class PoolIdStore:
     def __init__(self, client, old=False, fromTinyman=False, max_query=None, source=None):
         self.client = client
         self.fromTinyman = fromTinyman
@@ -44,7 +52,21 @@ class QuickPoolInfoStore:
             self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TMPOOL11'
         if source:
             self.source = source
-        self.pools = self.find_all_pools()
+        if client:
+            self.time = time.time()
+            self.pools = self.find_all_pools()
+
+    @staticmethod
+    def from_cache(cache_file: str) -> PoolIdStore:
+        with open(cache_file) as f:
+            data = json.load(f)
+        pool_store = PoolIdStore(None)
+        pool_store.pools = list()
+        for p in data['pools']:
+            pool_store.pools.append(PoolId.from_dict(p))
+        pool_store.source = data['source']
+        pool_store.time = data['time']
+        return pool_store
 
     def find_all_pools(self):
         source=self.source
@@ -89,7 +111,7 @@ class QuickPoolInfoStore:
 
     def asdicts(self):
         return {'source': self.source,
-                'time': time.time(),
+                'time': self.time,
                 'pools': [dataclasses.asdict(x) for x in self.pools]}
     
 @dataclass

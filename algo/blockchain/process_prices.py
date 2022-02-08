@@ -90,11 +90,11 @@ class PriceScraper(DataScraper):
 class PriceCacher(DataCacher):
 
     def __init__(self, client:TinymanClient,
-                 universe_cache_name: str,
+                 cache_file: str,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
 
-        super().__init__(universe_cache_name,
+        super().__init__(cache_file,
                          PRICE_CACHES_BASEDIR,
                          client,
                          date_min,

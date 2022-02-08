@@ -1,6 +1,6 @@
 import aiohttp
 
-from algo.universe.universe import Universe
+from algo.universe.universe import SmallUniverse
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa
@@ -19,14 +19,14 @@ pd.options.mode.chained_assignment = None  # default='warn'
 
 
 class DataCacher(ABC):
-    def __init__(self, universe_cache_name: str,
+    def __init__(self, cache_file: str,
                  cache_basedir: str,
                  client: TinymanClient,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
 
         self.client = client
-        self.pools = [(x.asset1_id, x.asset2_id) for x in Universe.from_cache(universe_cache_name).pools]
+        self.pools = [(x.asset1_id, x.asset2_id) for x in SmallUniverse.from_cache(cache_file).pools]
         self.date_min = date_min
         self.date_max = date_max
         for date in date_min, date_max:

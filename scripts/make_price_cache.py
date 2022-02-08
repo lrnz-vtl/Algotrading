@@ -14,7 +14,7 @@ if __name__ == '__main__':
     date_min = datetime.datetime(year=2022, month=1, day=20)
 
     pc = PriceCacher(client=TinymanMainnetClient(),
-                     universe_cache_name=args.universe_cache_name,
+                     cache_file=args.universe_cache_name,
                      date_min=date_min,
                      date_max=None
                      )

@@ -15,7 +15,7 @@ if __name__ == '__main__':
     date_max = datetime.datetime(year=2021, month=12, day=31)
 
     pc = PriceCacher(client=TinymanOldnetClient(),
-                     universe_cache_name=args.universe_cache_name,
+                     cache_file=args.universe_cache_name,
                      date_min=date_min,
                      date_max=date_max
                      )
