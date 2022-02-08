@@ -11,7 +11,7 @@ if __name__ == '__main__':
 
     dbfname = args.dbfname
 
-    with MarketSqliteLogger(dbfile=dbfname) as marketLogger:
+    with MarketSqliteLogger(run_name=dbfname) as marketLogger:
         with closing(marketLogger.con.cursor()) as c:
             c.execute(f"select * from {marketLogger.tablename}")
             for x in c.fetchall():

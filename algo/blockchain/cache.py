@@ -49,7 +49,7 @@ class DataCacher(ABC):
         asyncio.run(main())
 
     async def _cache_pool(self, session, assets, basedir):
-        assets = list(sorted(assets))
+        assets = list(sorted(assets, reverse=True))
         cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
         os.makedirs(cache_dir, exist_ok=True)
 

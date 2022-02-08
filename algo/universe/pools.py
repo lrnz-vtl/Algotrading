@@ -13,7 +13,8 @@ from dataclasses import dataclass
 import dataclasses
 from typing import Optional, Union
 from definitions import ROOT_DIR
-import  numpy as np
+import numpy as np
+import time
 
 POOL_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches/candidate_pools')
 
@@ -31,44 +32,65 @@ class PoolId:
     address: str
 
 class QuickPoolInfoStore:
-    def __init__(self, client, old=False):
+    def __init__(self, client, old=False, fromTinyman=False, max_query=None, source=None):
         self.client = client
-        if old:
+        self.fromTinyman = fromTinyman
+        self.max_query = max_query
+        if fromTinyman:
+            self.source = 'https://mainnet.analytics.tinyman.org/api/v1/pools/?limit=10&ordering=-liquidity&with_statistics=true&verified_only=true'
+        elif old:
             self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TM1POOL'
         else:
             self.source = 'https://algoindexer.algoexplorerapi.io/v2/assets?unit=TMPOOL11'
+        if source:
+            self.source = source
         self.pools = self.find_all_pools()
 
     def find_all_pools(self):
         source=self.source
         pools = list()
+        nquery = 0
         while True:
+            nquery += 1
+            print(f'{nquery}: {source}')
             pool_urls = requests.get(url=source).json()
-            for p in pool_urls['assets']:
-                addr = p['params']['creator']
+            pool_list = pool_urls['results'] if self.fromTinyman else pool_urls['assets'] 
+            for p in pool_list:
+                addr = p['address'] if self.fromTinyman else p['params']['creator']
                 asas = list(Portfolio(addr).coins.keys())
                 asas.sort()
                 if (len(asas)>3):
                     filtered=filter(lambda idx: idx!=0, asas)
                     asas=list(filtered)
-                if self._check_pool(asas[1], asas[0]):
+                print(asas,addr)
+                if self._check_pool(asas[1], asas[0], addr):
                     pools.append(PoolId(asas[1], asas[0], addr))
-            if 'next-token' in pool_urls:
-                print(source)
-                source=f"{self.source}&next={pool_urls['next-token']}"
+            if 'next-token' in pool_urls or 'next' in pool_urls:
+                if self.fromTinyman:
+                    source=pool_urls['next']
+                else:
+                    source=f"{self.source}&next={pool_urls['next-token']}"
             else:
+                break
+            if self.max_query and nquery >= self.max_query:
                 break
         return pools
     
-    def _check_pool(self, p0: int, p1: int):
+    def _check_pool(self, p0: int, p1: int, addr: str):
         try:
-            return self.client.fetch_pool(p0, p1).exists
+            p = self.client.fetch_pool(p0, p1)
+            return p.exists and addr==p.address
         except KeyError as e:
-            warnings.warning(f"Skipping pool ({p0, p1}) because received KeyError with key {e}")
+            warnings.warn(f"Skipping pool ({p0, p1}) because received KeyError with key {e}")
+            return False
+        except algosdk.error.AlgodHTTPError as e:
+            warnings.warn(f"Skipping pool ({p0, p1}) because received AlgodHTTPError {e}")
             return False
 
     def asdicts(self):
-        return {'source': self.source, 'pools': [dataclasses.asdict(x) for x in self.pools]}
+        return {'source': self.source,
+                'time': time.time(),
+                'pools': [dataclasses.asdict(x) for x in self.pools]}
     
 @dataclass
 class PoolInfo:
