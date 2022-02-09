@@ -1,5 +1,5 @@
+import logging
 import aiohttp
-
 import requests
 from dataclasses import dataclass
 from typing import Optional
@@ -58,6 +58,8 @@ def get_pool_state_txn(tx: dict):
 class PriceScraper(DataScraper):
     def __init__(self, client: TinymanClient, asset1_id: int, asset2_id: int):
 
+        self.logger = logging.getLogger("PriceScraper")
+
         pool = client.fetch_pool(asset1_id, asset2_id)
 
         assert pool.exists
@@ -66,16 +68,22 @@ class PriceScraper(DataScraper):
         self.assets = [asset1_id, asset2_id]
         self.address = pool.address
 
-    async def scrape(self, session:aiohttp.ClientSession,
+    async def scrape(self, session: aiohttp.ClientSession,
                      timestamp_min: int,
-                     before_time:Optional[datetime.datetime],
+                     before_time: Optional[datetime.datetime],
                      num_queries: Optional[int] = None):
         prev_time = None
 
+        self.logger.debug(f'Started scraping price for assets {self.assets}')
+
         async for tx in query_transactions(session=session,
-                                           params={'address': self.address},
+                                           params={'address': self.address, 'tx-type': 'appl'},
                                            num_queries=num_queries,
                                            before_time=before_time):
+
+            self.logger.debug(f'Received transaction for assets {self.assets}, '
+                              f'block_time={datetime.datetime.fromtimestamp(tx["round-time"])}')
+
             if tx['tx-type'] != 'appl':
                 continue
             if tx['round-time'] < timestamp_min:
@@ -85,6 +93,8 @@ class PriceScraper(DataScraper):
                 continue
             prev_time = ps.time
             yield ps
+
+        self.logger.debug(f'Stopped scraping price for assets {self.assets}')
 
 
 class PriceCacher(DataCacher):
