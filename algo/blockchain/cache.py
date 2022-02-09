@@ -117,6 +117,6 @@ class DataCacher(ABC):
             df.groupby(dates).apply(lambda x: cache_day_df(x, x.name))
 
         with open(f'{cache_dir}.json','w') as fp:
-            json.dump(set(dates_to_fetch), fp, default=str)
+            json.dump(existing_dates.union(set(dates_to_fetch)), fp, default=str)
         # for date in dates_to_fetch:
         #     Path(os.path.join(cache_dir, f'{date.date()}.done')).touch()
