@@ -19,12 +19,6 @@ def generator_to_df(gen, time_columns=('time',)):
     return df
 
 
-def timestamp_to_5min(time_col: pd.Series):
-    # We do not want lookahead in the data, so each 5 minute slice should contain the data for the past, not the future
-    time_5min = ((time_col // 300) + ((time_col % 300) > 0).astype(int)) * 300
-    return pd.to_datetime(time_5min, unit='s', utc=True)
-
-
 def load_from_cache(pattern, filter_pair):
     def gen_data():
         for base_dir in glob.glob(pattern):
@@ -38,13 +32,10 @@ def load_from_cache(pattern, filter_pair):
                     df['asset2'] = a1
                 yield df
 
-    df = pd.concat(gen_data())
-    df['time_5min'] = timestamp_to_5min(df['time'])
-    return df
+    return pd.concat(gen_data())
 
 
 def load_algo_pools(cache_name: str, data_type: str):
-
     assert data_type in ['prices', 'volumes']
 
     def filter_pair(a1, a2):

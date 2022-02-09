@@ -8,7 +8,7 @@ from base64 import b64decode, b64encode
 import warnings
 import time
 from tinyman.v1.client import TinymanClient
-from algo.blockchain.base import DataScraper
+from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
@@ -62,7 +62,8 @@ class PriceScraper(DataScraper):
 
         pool = client.fetch_pool(asset1_id, asset2_id)
 
-        assert pool.exists
+        if not pool.exists:
+            raise NotExistentPoolError()
         self.liquidity_asset = pool.liquidity_asset.id
 
         self.assets = [asset1_id, asset2_id]
@@ -113,5 +114,5 @@ class PriceCacher(DataCacher):
     def make_scraper(self, asset1_id: int, asset2_id: int):
         try:
             return PriceScraper(self.client, asset1_id, asset2_id)
-        except AssertionError as e:
+        except NotExistentPoolError as e:
             return None

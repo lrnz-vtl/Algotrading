@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 from algo.blockchain.requests import query_transactions
 from tinyman.v1.client import TinymanClient
-from algo.blockchain.base import DataScraper
+from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
@@ -88,7 +88,9 @@ class SwapScraper(DataScraper):
     def __init__(self, client: TinymanClient, asset1_id: int, asset2_id: int):
 
         pool = client.fetch_pool(asset1_id, asset2_id)
-        assert pool.exists
+
+        if not pool.exists:
+            raise NotExistentPoolError()
 
         self.liquidity_asset = pool.liquidity_asset.id
         self.asset1_id = asset1_id
@@ -157,4 +159,7 @@ class VolumeCacher(DataCacher):
         super().__init__(cache_file, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
-        return SwapScraper(self.client, asset1_id, asset2_id)
+        try:
+            return SwapScraper(self.client, asset1_id, asset2_id)
+        except NotExistentPoolError as e:
+            return None

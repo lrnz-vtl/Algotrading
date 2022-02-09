@@ -9,11 +9,23 @@ from enum import Flag, auto
 import dataclasses
 from dataclasses import dataclass
 from algo.universe.hardcoded import ALGO_DECIMALS
+from functools import lru_cache
 
 
 def get_asset_data(asset_id: int):
     res = requests.get(f'https://algoindexer.algoexplorerapi.io/v2/assets/{asset_id}').json()
     return res['asset']
+
+
+@lru_cache()
+def get_asset_name(asset_id):
+    return get_asset_data(asset_id)['params']['name']
+
+
+@lru_cache()
+def get_decimals(asset_id):
+    return get_asset_data(asset_id)['params']['decimals']
+
 
 @dataclass
 class AssetInfo:

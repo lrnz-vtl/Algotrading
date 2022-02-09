@@ -4,15 +4,6 @@ from itertools import tee
 import numpy as np
 
 
-# class Strategy(ABC):
-#     @abstractmethod
-#     def assign_portfolio(self, ds, pf):
-#         pass
-
-#     @abstractmethod
-#     def rebalance_portfolio(self, ds, pf):
-#         pass
-
 class SimpleStrategyEMA:
     """Simple strategy based on monitoring of EMA"""
 

@@ -14,7 +14,7 @@ class SmallUniverse:
         self.pools = pools
 
     @staticmethod
-    def from_cache(cache_file: str) -> Universe:
+    def from_cache(cache_file: str) -> SmallUniverse:
         pool_store = PoolIdStore.from_cache(cache_file)
         return SmallUniverse(pool_store.pools)
 

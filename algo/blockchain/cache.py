@@ -36,6 +36,8 @@ class DateScheduler:
 
         self.date_min = date_min
 
+        assert self.date_max > self.date_min
+
     def get_dates_to_fetch(self, existing_dates: Iterable[datetime.date]) -> set[datetime.datetime]:
 
         needed_dates = set()
@@ -122,6 +124,8 @@ class DataCacher(ABC):
             self.logger.info(f'Skipping assets {assets[0], assets[1]} because all data is present in the cache')
             return
 
+        # Not optimal if there are non-contiguous day windows to fetch, should rather separate the single query into
+        # multiple queries for each contiguous window. However, if we just update the cache forward it does not matter.
         date_min = min(dates_to_fetch)
         date_max = max(dates_to_fetch) + datetime.timedelta(days=1)
 

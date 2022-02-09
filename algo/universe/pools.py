@@ -25,6 +25,7 @@ def nullable_strtofloat(x):
     else:
         return float(x)
 
+
 @dataclass
 class PoolId:
     asset1_id: int
@@ -38,6 +39,7 @@ class PoolId:
             r[key] = int(r[key])
 
         return PoolId(**r)
+
 
 class PoolIdStore:
     def __init__(self, client, old=False, fromTinyman=False, max_query=None, source=None):
@@ -69,39 +71,39 @@ class PoolIdStore:
         return pool_store
 
     def find_all_pools(self):
-        source=self.source
+        source = self.source
         pools = list()
         nquery = 0
         while True:
             nquery += 1
             print(f'{nquery}: {source}')
             pool_urls = requests.get(url=source).json()
-            pool_list = pool_urls['results'] if self.fromTinyman else pool_urls['assets'] 
+            pool_list = pool_urls['results'] if self.fromTinyman else pool_urls['assets']
             for p in pool_list:
                 addr = p['address'] if self.fromTinyman else p['params']['creator']
                 asas = list(Portfolio(addr).coins.keys())
                 asas.sort()
-                if (len(asas)>3):
-                    filtered=filter(lambda idx: idx!=0, asas)
-                    asas=list(filtered)
-                print(asas,addr)
+                if (len(asas) > 3):
+                    filtered = filter(lambda idx: idx != 0, asas)
+                    asas = list(filtered)
+                print(asas, addr)
                 if self._check_pool(asas[1], asas[0], addr):
                     pools.append(PoolId(asas[1], asas[0], addr))
             if 'next-token' in pool_urls or 'next' in pool_urls:
                 if self.fromTinyman:
-                    source=pool_urls['next']
+                    source = pool_urls['next']
                 else:
-                    source=f"{self.source}&next={pool_urls['next-token']}"
+                    source = f"{self.source}&next={pool_urls['next-token']}"
             else:
                 break
             if self.max_query and nquery >= self.max_query:
                 break
         return pools
-    
+
     def _check_pool(self, p0: int, p1: int, addr: str):
         try:
             p = self.client.fetch_pool(p0, p1)
-            return p.exists and addr==p.address
+            return p.exists and addr == p.address
         except KeyError as e:
             warnings.warn(f"Skipping pool ({p0, p1}) because received KeyError with key {e}")
             return False
@@ -113,7 +115,8 @@ class PoolIdStore:
         return {'source': self.source,
                 'time': self.time,
                 'pools': [dataclasses.asdict(x) for x in self.pools]}
-    
+
+
 @dataclass
 class PoolInfo:
     asset1_id: int
@@ -149,6 +152,7 @@ class PoolInfo:
             r[key] = int(r[key])
 
         return PoolInfo(**r)
+
 
 @dataclass
 class PoolInfoStoreScratchInputs:
