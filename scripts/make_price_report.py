@@ -5,13 +5,6 @@ from algo.strategy.analytics import process_market_df
 import argparse
 
 
-def process(subdf, asset_id):
-    decimals = get_decimals(asset_id)
-    subdf['price_norm'] = subdf['price'] * 10 ** (decimals - 6)
-    subdf['algo_volume_cumul'] = subdf['algo_volume'].cumsum()
-    return subdf
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -29,15 +22,15 @@ if __name__ == '__main__':
 
     keys = ['time_5min', 'asset1', 'asset2']
 
-    df['price'] = df['asset2_reserves'] / df['asset1_reserves']
-    df['algo_volume'] = df['asset2_amount'] / (10 ** 6)
-    df['algo_reserves'] = df['asset2_reserves'] / (10 ** 6)
-    df = df.groupby('asset1').apply(lambda x: process(x, x.name))
-
     keyname = 'asset1'
     plot_keys = list(df[keyname].unique())
 
-    cols = ('price_norm', 'algo_reserves', 'algo_volume_cumul')
+    def cumul_volume(subdf):
+        subdf['algo_volume_cumul'] = subdf['algo_volume'].cumsum()
+        return subdf
+    df = df.groupby(['asset1','asset2']).apply(cumul_volume)
+
+    cols = ('price_algo', 'algo_reserves', 'algo_volume_cumul')
 
     nrows = len(cols)
     ncols = len(plot_keys)

@@ -1,6 +1,22 @@
 import pandas as pd
 import datetime
 import numpy as np
+from algo.universe.assets import get_asset_name, get_decimals
+
+
+def make_algo_pricevolume(df):
+
+    assert np.all(df['asset2'] == 0)
+
+    def foo(subdf, asset_id):
+        decimals = get_decimals(asset_id)
+        subdf['algo_price'] = subdf['asset2_reserves'] / df['asset1_reserves'] * 10 ** (decimals - 6)
+        subdf['algo_volume'] = subdf['asset2_amount'] / (10 ** 6)
+        subdf['algo_reserves'] = subdf['asset2_reserves'] / (10 ** 6)
+
+        return subdf
+
+    return df.groupby('asset1').apply(lambda x: foo(x, x.name))
 
 
 def make_weights(df: pd.DataFrame):
@@ -8,10 +24,16 @@ def make_weights(df: pd.DataFrame):
     return df.groupby(['asset1', 'asset2', 'date'])['asset2_reserves'].agg('mean') / (10 ** 10)
 
 
-def make_response(df: pd.DataFrame):
-    checks = (df['time_5min'] - df['time_5min'].shift(1)) == datetime.timedelta(minutes=5)
-    assert np.all(checks[1:])
-    raise NotImplementedError
+def make_response(df: pd.DataFrame, minutes_forward: int):
+    assert minutes_forward % 5 == 0
+
+    time_forward = df[['asset1', 'asset2', 'time_5min', 'algo_price']].copy()
+    time_forward['time_5min'] = df['time_5min'] - datetime.timedelta(minutes=minutes_forward)
+
+    df = df.merge(time_forward, on=['asset1', 'asset2', 'time_5min'], how='left', suffixes=('', '_forward'))
+    df['response'] = (df['algo_price_forward'] - df['algo_price']) / df['algo_price']
+
+    return df
 
 
 def timestamp_to_5min(time_col: pd.Series):
@@ -35,7 +57,9 @@ def process_market_df(price_df: pd.DataFrame, volume_df: pd.DataFrame):
     volume_df = volume_df[volume_cols+keys].groupby(keys).agg('sum').reset_index()
 
     df = price_df.merge(volume_df, how='left', on=keys)
+    df['date'] = df['time_5min'].dt.date
 
     assert np.all(df['asset2'] == 0)
+    df = make_algo_pricevolume(df)
 
     return df
