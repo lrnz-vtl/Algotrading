@@ -30,7 +30,7 @@ if __name__ == '__main__':
         return subdf
     df = df.groupby(['asset1','asset2']).apply(cumul_volume)
 
-    cols = ('price_algo', 'algo_reserves', 'algo_volume_cumul')
+    cols = ('algo_price', 'algo_reserves', 'algo_volume_cumul')
 
     nrows = len(cols)
     ncols = len(plot_keys)
