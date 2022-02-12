@@ -1,8 +1,9 @@
 import logging
-
 from matplotlib import pyplot as plt
 import unittest
-from algo.strategy.signals import AnalysisDataStore, MAPriceFeaturizer, concat_featurizers, SimpleResponse
+from algo.signals.evaluation import AnalysisDataStore
+from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
+from algo.signals.responses import SimpleResponse
 from sklearn.linear_model import LinearRegression
 
 

@@ -1,110 +1,15 @@
 import logging
-
 import pandas as pd
 import datetime
 import numpy as np
 from matplotlib import pyplot as plt
 from algo.blockchain.utils import load_algo_pools
 from algo.strategy.analytics import process_market_df, make_weights
-from ts_tools_algo.features import exp_average
 from typing import Optional
-from typing import Callable
-from scipy.stats.mstats import winsorize
 from sklearn.linear_model import LinearRegression
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from sklearn.metrics import r2_score
-
-ASSET_INDEX_NAME = 'asset1'
-TIME_INDEX_NAME = 'time_5min'
-
-
-class SingleASAFeaturizer(ABC):
-
-    @abstractmethod
-    def _call(self, df: pd.DataFrame) -> pd.Series:
-        pass
-
-    @property
-    @abstractmethod
-    def name(self):
-        pass
-
-    def __call__(self, df: pd.DataFrame) -> pd.Series:
-        assert df.index.names == [TIME_INDEX_NAME]
-        return self._call(df)
-
-
-class MAPriceFeaturizer(SingleASAFeaturizer):
-    def __init__(self, minutes: int, price_col: str = 'algo_price'):
-        self.minutes = minutes
-        self.price_col = price_col
-
-    @property
-    def name(self):
-        return f'ma_{self.minutes}'
-
-    def _call(self, df: pd.DataFrame):
-        ts = df[self.price_col]
-        ma = pd.Series(exp_average(ts, self.minutes * 60), index=ts.index)
-        return ((ts - ma) / ts).rename(self.name)
-
-
-def concat_featurizers(fts: list[SingleASAFeaturizer]) -> Callable[[pd.DataFrame], pd.DataFrame]:
-    names = [ft.name for ft in fts]
-    assert len(names) == len(set(names))
-
-    def foo(df: pd.DataFrame):
-        return pd.concat([ft(df) for ft in fts], axis=1)
-
-    return foo
-
-
-@dataclass
-class ComputedLookaheadResponse:
-    ts: pd.Series
-    lookahead_time: datetime.timedelta
-
-
-class LookaheadResponse(ABC):
-
-    @property
-    @abstractmethod
-    def lookahead_time(self) -> datetime.timedelta:
-        pass
-
-    @abstractmethod
-    def _call(self, price: pd.Series) -> pd.Series:
-        pass
-
-    def __call__(self, price: pd.Series) -> ComputedLookaheadResponse:
-        assert price.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
-        return ComputedLookaheadResponse(self._call(price), self.lookahead_time)
-
-
-class SimpleResponse(LookaheadResponse):
-
-    def __init__(self, minutes_forward: int):
-        assert minutes_forward % 5 == 0
-        self.minutes_forward = minutes_forward
-
-    @property
-    def lookahead_time(self) -> datetime.timedelta:
-        return datetime.timedelta(minutes=self.minutes_forward)
-
-    def _call(self, price: pd.Series) -> pd.Series:
-        price = price.rename('price')
-        time_forward = price.copy()
-        time_forward.index = time_forward.index.set_levels(
-            time_forward.index.levels[1] - datetime.timedelta(minutes=self.minutes_forward), TIME_INDEX_NAME)
-
-        prices = price.to_frame().join(time_forward, rsuffix='_forward')
-        resp = (prices['price_forward'] - prices['price']) / prices['price']
-
-        resp_winsor = resp.copy()
-        mask = ~np.isnan(resp_winsor)
-        resp_winsor[mask] = winsorize(resp_winsor[mask], limits=(0.05, 0.05))
-        return resp_winsor
+from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
+from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 
 
 def any_axis_1(x):

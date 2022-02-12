@@ -37,6 +37,7 @@ class AveragePrice:
     asset2_reserves: int
 
 
+
 def aggregatePrice(bucket_delta: int = 60 * 5, logger=None) -> Generator[AveragePrice, Tuple[Timestamp, Pool, int, int], None]:
     """
     Very basic time-average price aggregator
