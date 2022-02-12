@@ -5,11 +5,13 @@ Algorand trading on tinyman
 
 To run this code requires:
 - tinyman.py.sdk https://github.com/tinymanorg/tinyman-py-sdk
+- ts_tools_algo git+ssh://git@github.com/lrnz-vtl/ts_tools_algo.git
 - py-algorand-sdk https://py-algorand-sdk.readthedocs.io
 
 These packages could be installed separately as
 ```
 pip install git+https://github.com/tinymanorg/tinyman-py-sdk.git
+pip install git+ssh://git@github.com/lrnz-vtl/ts_tools_algo.git
 pip install py-algorand-sdk
 ```
 
