@@ -20,20 +20,18 @@ def make_algo_pricevolume(df):
 
 
 def make_weights(df: pd.DataFrame):
-    assert np.all(df['asset2'] == 0)
-    return df.groupby(['asset1', 'asset2', 'date'])['asset2_reserves'].agg('mean') / (10 ** 10)
+    return (df.groupby(['asset1', 'date'])['asset2_reserves'].agg('mean') / (10 ** 10)).rename('weight')
 
 
 def make_response(df: pd.DataFrame, minutes_forward: int):
     assert minutes_forward % 5 == 0
 
-    time_forward = df[['asset1', 'asset2', 'time_5min', 'algo_price']].copy()
-    time_forward['time_5min'] = df['time_5min'] - datetime.timedelta(minutes=minutes_forward)
+    time_forward = df['algo_price'].copy()
+    time_forward.index = time_forward.index.set_levels(
+        time_forward.index.levels[1] - datetime.timedelta(minutes=minutes_forward), 'time_5min')
 
-    df = df.merge(time_forward, on=['asset1', 'asset2', 'time_5min'], how='left', suffixes=('', '_forward'))
-    df['response'] = (df['algo_price_forward'] - df['algo_price']) / df['algo_price']
-
-    return df
+    prices = df[['algo_price']].join(time_forward, rsuffix='_forward')
+    return (prices['algo_price_forward'] - prices['algo_price']) / prices['algo_price']
 
 
 def timestamp_to_5min(time_col: pd.Series):

@@ -1,41 +1,6 @@
 from algo.tinychart_data.datastore import DataStore, AssetData
 import pandas as pd
-import numpy as np
-# from numba import jit
-
-
-class ExpAverages:
-
-    def __init__(self, ts: pd.Series, T: float):
-        """ T is the time scale (expressed in seconds) """
-
-        ema = np.empty(shape=ts.shape[0])
-        emv = np.empty(shape=ts.shape[0])
-        ema[:] = np.NaN
-        emv[:] = np.NaN
-
-        t0 = pd.NaT
-        x0 = np.nan
-        # TODO would be nice to wrap this in numba.jit, the import fails for me
-        for i, (t, x) in enumerate(ts.iteritems()):
-            if x is not np.nan:
-                if x0 is np.nan:
-                    ema[i] = x
-                    emv[i] = 0
-                else:
-                    alpha = 1 - np.exp(-(t - t0).seconds / T)
-                    ema[i] = alpha * x + (1 - alpha) * ema[i - 1]
-                    emv[i] = (1 - alpha) * emv[i - 1] + alpha * (x - ema[i - 1]) ** 2
-                t0 = t
-                x0 = x
-
-        self.ema = ema
-        self.emv = emv
-
-
-def exp_average(ts, T):
-    ea = ExpAverages(ts, T)
-    return ea.ema
+from ts_tools_algo.features import exp_average
 
 
 def compute_moving_average(ts: pd.Series, interval: str = "3h"):

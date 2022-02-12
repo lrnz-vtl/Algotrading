@@ -1,4 +1,4 @@
-from algo.strategy.timeseries import exp_average
+from algo.strategy.features import exp_average
 from algo.stream.marketstream import MultiPoolStream
 from itertools import tee
 import networkx as nx
