@@ -5,7 +5,6 @@ from algo.universe.assets import get_asset_name, get_decimals
 
 
 def make_algo_pricevolume(df):
-
     assert np.all(df['asset2'] == 0)
 
     def foo(subdf, asset_id):
@@ -23,17 +22,6 @@ def make_weights(df: pd.DataFrame):
     return (df.groupby(['asset1', 'date'])['asset2_reserves'].agg('mean') / (10 ** 10)).rename('weight')
 
 
-def make_response(df: pd.DataFrame, minutes_forward: int):
-    assert minutes_forward % 5 == 0
-
-    time_forward = df['algo_price'].copy()
-    time_forward.index = time_forward.index.set_levels(
-        time_forward.index.levels[1] - datetime.timedelta(minutes=minutes_forward), 'time_5min')
-
-    prices = df[['algo_price']].join(time_forward, rsuffix='_forward')
-    return (prices['algo_price_forward'] - prices['algo_price']) / prices['algo_price']
-
-
 def timestamp_to_5min(time_col: pd.Series):
     # We do not want lookahead in the data, so each 5 minute slice should contain the data for the past, not the future
     time_5min = ((time_col // 300) + ((time_col % 300) > 0).astype(int)) * 300
@@ -47,12 +35,12 @@ def process_market_df(price_df: pd.DataFrame, volume_df: pd.DataFrame):
     keys = ['time_5min', 'asset1', 'asset2']
 
     price_cols = ['asset1_reserves', 'asset2_reserves']
-    price_df = price_df[price_cols+keys].groupby(keys).agg('mean').reset_index()
+    price_df = price_df[price_cols + keys].groupby(keys).agg('mean').reset_index()
 
     volume_cols = ['asset1_amount', 'asset2_amount']
     for col in volume_cols:
         volume_df[col] = abs(volume_df[col])
-    volume_df = volume_df[volume_cols+keys].groupby(keys).agg('sum').reset_index()
+    volume_df = volume_df[volume_cols + keys].groupby(keys).agg('sum').reset_index()
 
     df = price_df.merge(volume_df, how='left', on=keys)
     df['date'] = df['time_5min'].dt.date
