@@ -24,10 +24,12 @@ def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: in
     return PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'], tx['round-time'])
     
 class DataStream:
-    def __init__(self, min_round: int, cache_file: str):
+    def __init__(self, min_round: int, cache_file: str, next_token: Optional[str] = None):
         self.pools = {x.address for x in SmallUniverse.from_cache(cache_file).pools}
         self.url=f'https://algoindexer.algoexplorerapi.io/v2/transactions'
         self.params = {'min-round': min_round}
+        if next_token:
+            self.params['next'] = next_token
 
     def next_transaction(self):
         while True:
