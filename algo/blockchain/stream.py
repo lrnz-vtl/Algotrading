@@ -54,8 +54,8 @@ class PriceVolumeStream:
         self.pools = {x.address : (x.asset1_id, x.asset2_id) for x in SmallUniverse.from_cache(cache_file).pools}
         self.prices = {pool : list() for pool in self.pools.keys()}
         self.volumes = {pool : list() for pool in self.pools.keys()}
-        self.transaction_out = {pool : None for pool in self.pools.keys()}
         self.transaction_in = {pool : None for pool in self.pools.keys()}
+        self.transaction_fee = {pool : False for pool in self.pools.keys()}
         
     def scrape(self):
         
@@ -63,6 +63,13 @@ class PriceVolumeStream:
                               asset1_id: int, asset2_id: int):
             return tx.counterparty == transaction_out.counterparty \
                    and tx.asset_id != transaction_out.asset_id \
+                   and tx.asset_id in [asset1_id, asset2_id] \
+                   and not is_fee_payment(tx)
+
+        def is_transaction_out(tx: PoolTransaction, transaction_in: PoolTransaction,
+                              asset1_id: int, asset2_id: int):
+            return tx.amount < 0 and tx.counterparty == transaction_in.counterparty \
+                   and tx.asset_id != transaction_in.asset_id \
                    and tx.asset_id in [asset1_id, asset2_id] \
                    and not is_fee_payment(tx)
 
@@ -83,34 +90,30 @@ class PriceVolumeStream:
                 asset1_id = self.pools[pool][0]
                 asset2_id = self.pools[pool][1]
                 # adapted from algo.blockchain.process_volumes.SwapScraper.scrape
-                if self.transaction_out[pool]:
+                if self.transaction_fee[pool]:
                     if self.transaction_in[pool]:
-                        if is_fee_payment(pt) and pt.counterparty == self.transaction_in[pool].counterparty:
-                            if self.transaction_in[pool].asset_id == asset1_id \
-                               and self.transaction_out[pool].asset_id == asset2_id:
+                        if is_transaction_out(pt, self.transaction_in[pool], asset1_id, asset2_id):
+                            if self.transaction_in[pool].asset_id == asset1_id and pt.asset_id == asset2_id:
                                 asset1_amount = self.transaction_in[pool].amount
-                                asset2_amount = self.transaction_out[pool].amount
-                            elif self.transaction_in[pool].asset_id == asset2_id \
-                                 and self.transaction_out[pool].asset_id == asset1_id:
+                                asset2_amount = pt.amount
+                            elif self.transaction_in[pool].asset_id == asset2_id and pt.asset_id == asset1_id:
                                 asset2_amount = self.transaction_in[pool].amount
-                                asset1_amount = self.transaction_out[pool].amount
+                                asset1_amount = pt.amount
                             else:
                                 raise ValueError
-                            assert self.transaction_in[pool].amount > 0 \
-                                and self.transaction_out[pool].amount < 0
+                            assert self.transaction_in[pool].amount > 0 and pt.amount < 0
                             swap = Swap(asset1_amount=asset1_amount,
                                         asset2_amount=asset2_amount,
                                         counterparty=pt.counterparty,
                                         block=pt.block,
                                         time=pt.time)
                             self.volumes[pool].append(swap)
-                        self.transaction_out[pool] = None
+                        self.transaction_fee[pool] = False
                         self.transaction_in[pool] = None
                     else:
-                        if is_transaction_in(pt, self.transaction_out[pool], asset1_id, asset2_id):
+                        if pt.amount > 0 and not is_fee_payment(pt) and pt.asset_id in [asset1_id, asset2_id]:
                             self.transaction_in[pool] = pt
                         else:
-                            self.transaction_out[pool] = None
-                else:
-                    if pt.amount < 0 and pt.asset_id in [asset1_id, asset2_id]:
-                        self.transaction_out[pool] = pt
+                            self.transaction_in[pool] = None
+                elif is_fee_payment(pt):
+                    self.transaction_fee[pool] = True
