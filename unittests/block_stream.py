@@ -23,3 +23,4 @@ prices = prices[prices['asset2']==0]
 volumes = volumes[volumes['asset2']==0]
 
 market_data = process_market_df(prices, volumes)
+print(market_data)
