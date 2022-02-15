@@ -1,10 +1,11 @@
 import logging
 from matplotlib import pyplot as plt
 import unittest
-from algo.signals.evaluation import AnalysisDataStore
+from algo.signals.evaluation import AnalysisDataStore, ASSET_INDEX_NAME
 from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
 from algo.signals.responses import SimpleResponse
 from sklearn.linear_model import LinearRegression
+from algo.universe.universe import SimpleUniverse
 
 
 class TestAnalysisDs(unittest.TestCase):
@@ -12,13 +13,16 @@ class TestAnalysisDs(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         price_cache = '20220209_prehack'
         volume_cache = '20220209_prehack'
+        smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack'
         filter_liq = 10000
-        # remove Birdbot
-        filter_asset = {478549868, }
 
-        logging.basicConfig()
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
-        self.ds = AnalysisDataStore(price_cache, volume_cache, filter_liq, filter_asset)
+        universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
+
+        self.ds = AnalysisDataStore(price_cache, volume_cache, universe, filter_liq)
+
         respMaker = SimpleResponse(30)
         self.response = self.ds.make_response(respMaker)
 
@@ -28,10 +32,9 @@ class TestAnalysisDs(unittest.TestCase):
         super().__init__(*args, **kwargs)
 
     def test_features(self):
+        f, axs = plt.subplots(1, 3, figsize=(10, 5))
 
-        f,axs = plt.subplots(1,3, figsize=(10, 5))
-
-        for featurizer,ax in zip(self.featurizers,axs):
+        for featurizer, ax in zip(self.featurizers, axs):
             betas = self.ds.eval_feature(self.ds.make_asset_features(featurizer), self.response)
 
             ax.hist(betas)

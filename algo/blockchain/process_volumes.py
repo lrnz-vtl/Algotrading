@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.requests import query_transactions
+from algo.blockchain.algo_requests import query_transactions
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher

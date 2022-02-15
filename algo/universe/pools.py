@@ -16,7 +16,7 @@ from definitions import ROOT_DIR
 import numpy as np
 import time
 
-POOL_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches/candidate_pools')
+POOL_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches/candidate_pools/pool_info')
 
 
 def nullable_strtofloat(x):
@@ -41,6 +41,18 @@ class PoolId:
         return PoolId(**r)
 
 
+def load_pool_info(cache_file :str):
+    with open(cache_file) as f:
+        data = json.load(f)
+    pool_store = PoolIdStore(None)
+    pool_store.pools = list()
+    for p in data['pools']:
+        pool_store.pools.append(PoolId.from_dict(p))
+    pool_store.source = data['source']
+    pool_store.time = data['time']
+    return pool_store
+
+
 class PoolIdStore:
     def __init__(self, client, old=False, fromTinyman=False, max_query=None, source=None):
         self.client = client
@@ -59,16 +71,10 @@ class PoolIdStore:
             self.pools = self.find_all_pools()
 
     @staticmethod
-    def from_cache(cache_file: str) -> PoolIdStore:
-        with open(cache_file) as f:
-            data = json.load(f)
-        pool_store = PoolIdStore(None)
-        pool_store.pools = list()
-        for p in data['pools']:
-            pool_store.pools.append(PoolId.from_dict(p))
-        pool_store.source = data['source']
-        pool_store.time = data['time']
-        return pool_store
+    def from_cache(cache_name: str) -> PoolIdStore:
+
+        cache_file = os.path.join(POOL_CACHE_BASEDIR, cache_name)
+        return load_pool_info(cache_file)
 
     def find_all_pools(self):
         source = self.source
@@ -83,7 +89,7 @@ class PoolIdStore:
                 addr = p['address'] if self.fromTinyman else p['params']['creator']
                 asas = list(Portfolio(addr).coins.keys())
                 asas.sort()
-                if (len(asas) > 3):
+                if len(asas) > 3:
                     filtered = filter(lambda idx: idx != 0, asas)
                     asas = list(filtered)
                 print(asas, addr)

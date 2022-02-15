@@ -10,7 +10,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
-
+from algo.universe.universe import SimpleUniverse
 
 def any_axis_1(x):
     if (isinstance(x, np.ndarray) and x.ndim == 2) or isinstance(x, pd.DataFrame):
@@ -25,12 +25,9 @@ def not_nan_mask(*vecs):
 
 class AnalysisDataStore:
 
-    def __init__(self, price_cache: str, volume_cache: str,
-                 filter_liq: Optional[float],
-                 filter_asset: set[int]
-                 ):
+    def __init__(self, price_cache: str, volume_cache: str, universe: SimpleUniverse, filter_liq: Optional[float]):
 
-        self.logger = logging.getLogger('AnalysisDataStore')
+        self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
 
         dfp = load_algo_pools(price_cache, 'prices')
@@ -45,7 +42,15 @@ class AnalysisDataStore:
         if filter_liq is not None:
             df = df[df['algo_reserves'] > filter_liq]
 
-        df = df[~df.index.get_level_values(ASSET_INDEX_NAME).isin(filter_asset)]
+        asset_ids = [pool.asset1_id for pool in universe.pools]
+        assert all(pool.asset2_id == 0 for pool in universe.pools), "Need to provide a Universe with only Algo pools"
+
+        df = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
+
+        df_ids = df.index.get_level_values(ASSET_INDEX_NAME).unique()
+        missing_ids = [asset_id for asset_id in asset_ids if asset_id not in df_ids]
+        if missing_ids:
+            self.logger.error(f"asset ids {missing_ids} are missing from the dataframe generated from the cache")
 
         ws = make_weights(df)
         weights = df[['date']].merge(ws, on=[ASSET_INDEX_NAME, 'date'], how='left')

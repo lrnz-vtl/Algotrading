@@ -1,13 +1,14 @@
+import logging
 from algo.blockchain.process_volumes import PoolTransaction, Swap, is_fee_payment
 from algo.blockchain.process_prices import PoolState, get_pool_state_txn
-from algo.blockchain.utils import generator_to_df
-from algo.universe.universe import SmallUniverse
-from typing import Optional
+from algo.universe.universe import SimpleUniverse
+from typing import Optional, Union, Generator, Any
 import pandas as pd
 import requests
+from dataclasses import dataclass
+
 
 def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: int):
-
     receiver, sender = tx[key]['receiver'], tx['sender']
 
     if pool_address == receiver:
@@ -24,86 +25,73 @@ def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: in
     amount = sign * tx[key]['amount']
     block = tx['confirmed-round']
     return PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'], tx['round-time'])
-    
+
+
 class DataStream:
-    def __init__(self, min_round: int, cache_file: str, next_token: Optional[str] = None):
-        self.pools = {x.address for x in SmallUniverse.from_cache(cache_file).pools}
-        self.url=f'https://algoindexer.algoexplorerapi.io/v2/transactions'
+    def __init__(self, min_round: int, universe: SimpleUniverse, next_token: Optional[str] = None):
+
+        self.pools = {x.address for x in universe.pools}
+        self.url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
         self.params = {'min-round': min_round}
         if next_token:
             self.params['next'] = next_token
 
+        self.logger = logging.getLogger(__name__)
+
     def next_transaction(self):
         while True:
             req = requests.get(url=self.url, params=self.params).json()
+
+            self.logger.debug('Queried transaction group')
+
             for tx in req['transactions']:
                 pool = None
-                if (tx['sender'] in self.pools):
+                if tx['sender'] in self.pools:
                     pool = tx['sender']
-                elif (tx['tx-type']=='pay' and tx['payment-transaction']['receiver'] in self.pools):
+                elif tx['tx-type'] == 'pay' and tx['payment-transaction']['receiver'] in self.pools:
                     pool = tx['payment-transaction']['receiver']
-                elif (tx['tx-type']=='axfer' and tx['asset-transfer-transaction']['receiver'] in self.pools):
+                elif tx['tx-type'] == 'axfer' and tx['asset-transfer-transaction']['receiver'] in self.pools:
                     pool = tx['asset-transfer-transaction']['receiver']
                 if pool:
-                    yield (pool, tx)
-            if not 'next-token' in req:
+                    yield pool, tx
+            if 'next-token' not in req:
                 break
             self.params['next'] = req['next-token']
 
+
+@dataclass
+class PriceOrVolumeUpdate:
+    pool_address: str
+    market_update: Union[PoolState, Swap]
+
+
 class PriceVolumeStream:
-    def __init__(self, min_round: int, cache_file: str, cache_basedir: Optional[str] = None):
-        self.dataStream = DataStream(min_round, cache_file)
-        self.pools = {x.address : (x.asset1_id, x.asset2_id) for x in SmallUniverse.from_cache(cache_file).pools}
-        self.prices_ = {pool : list() for pool in self.pools.keys()}
-        self.volumes_ = {pool : list() for pool in self.pools.keys()}
-        self.transaction_in_ = {pool : None for pool in self.pools.keys()}
-        self.transaction_fee_ = {pool : False for pool in self.pools.keys()}
+    def __init__(self, min_round: int, universe: SimpleUniverse):
+        self.dataStream = DataStream(min_round, universe)
+        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in universe.pools}
+        self.transaction_in_ = {pool: None for pool in self.pools.keys()}
+        self.transaction_fee_ = {pool: False for pool in self.pools.keys()}
 
-    def volume(self, pool):
-        return pd.DataFrame(self.volumes_[pool])
+    def scrape(self) -> Generator[PriceOrVolumeUpdate, Any, Any]:
 
-    def price(self, pool):
-        return pd.DataFrame(self.prices_[pool])
-
-    def volumes(self):
-        def gen_volumes():
-            for pool in self.volumes_:
-                df = pd.DataFrame(self.volumes_[pool])
-                df['asset1'] = self.pools[pool][0]
-                df['asset2'] = self.pools[pool][1]
-                yield df
-        return pd.concat(gen_volumes())
-    
-    def prices(self):
-        def gen_prices():
-            for pool in self.prices_:
-                df = pd.DataFrame(self.prices_[pool])
-                df['asset1'] = self.pools[pool][0]
-                df['asset2'] = self.pools[pool][1]
-                yield df
-        return pd.concat(gen_prices())
-    
-    def scrape(self):
-        
         def is_transaction_out(tx: PoolTransaction, transaction_in: PoolTransaction,
-                              asset1_id: int, asset2_id: int):
+                               asset1_id: int, asset2_id: int):
             return tx.amount < 0 and tx.counterparty == transaction_in.counterparty \
                    and tx.asset_id != transaction_in.asset_id \
                    and tx.asset_id in [asset1_id, asset2_id] \
                    and not is_fee_payment(tx)
 
-        
         for pool, tx in self.dataStream.next_transaction():
             pt = None
-            if tx['tx-type']=='appl':
+            if tx['tx-type'] == 'appl':
                 ps = get_pool_state_txn(tx)
                 if ps:
-                    self.prices_[pool].append(ps)
-            elif tx['tx-type']=='pay':
-                key='payment-transaction'
+                    yield PriceOrVolumeUpdate(pool, ps)
+            elif tx['tx-type'] == 'pay':
+                key = 'payment-transaction'
                 pt = get_pool_transaction_txn(tx, pool, key, 0)
-            elif tx['tx-type']=='axfer':
-                key='asset-transfer-transaction'
+            elif tx['tx-type'] == 'axfer':
+                key = 'asset-transfer-transaction'
                 pt = get_pool_transaction_txn(tx, pool, key, tx[key]['asset-id'])
             if pt:
                 asset1_id = self.pools[pool][0]
@@ -120,13 +108,13 @@ class PriceVolumeStream:
                                 asset1_amount = pt.amount
                             else:
                                 raise ValueError
-                            assert self.transaction_in_[pool].amount > 0 and pt.amount < 0
+                            assert self.transaction_in_[pool].amount > 0 > pt.amount
                             swap = Swap(asset1_amount=asset1_amount,
                                         asset2_amount=asset2_amount,
                                         counterparty=pt.counterparty,
                                         block=pt.block,
                                         time=pt.time)
-                            self.volumes_[pool].append(swap)
+                            yield PriceOrVolumeUpdate(pool, swap)
                         self.transaction_fee_[pool] = False
                         self.transaction_in_[pool] = None
                     else:
@@ -136,3 +124,50 @@ class PriceVolumeStream:
                             self.transaction_in_[pool] = None
                 elif is_fee_payment(pt):
                     self.transaction_fee_[pool] = True
+
+
+class PriceVolumeDataStore:
+
+    def __init__(self, min_round: int, universe: SimpleUniverse):
+
+        self.price_volume_stream = PriceVolumeStream(min_round, universe)
+
+        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in universe.pools}
+        self.prices_ = {pool: list() for pool in self.pools.keys()}
+        self.volumes_ = {pool: list() for pool in self.pools.keys()}
+
+    def volumes(self):
+        def gen_volumes():
+            for pool in self.volumes_:
+                df = pd.DataFrame(self.volumes_[pool])
+                df['asset1'] = self.pools[pool][0]
+                df['asset2'] = self.pools[pool][1]
+                yield df
+
+        return pd.concat(gen_volumes())
+
+    def prices(self):
+        def gen_prices():
+            for pool in self.prices_:
+                df = pd.DataFrame(self.prices_[pool])
+                df['asset1'] = self.pools[pool][0]
+                df['asset2'] = self.pools[pool][1]
+                yield df
+
+        return pd.concat(gen_prices())
+
+    def volume(self, pool):
+        return pd.DataFrame(self.volumes_[pool])
+
+    def price(self, pool):
+        return pd.DataFrame(self.prices_[pool])
+
+    def scrape(self):
+        for update in self.price_volume_stream.scrape():
+            if isinstance(update.market_update, Swap):
+                update_arr = self.volumes_
+            elif isinstance(update.market_update, PoolState):
+                update_arr = self.prices_
+            else:
+                raise ValueError
+            update_arr[update.pool_address].append(update.market_update)

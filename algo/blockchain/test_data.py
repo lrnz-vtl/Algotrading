@@ -1,8 +1,10 @@
-import unittest
 import logging
-
 import aiohttp
-
+from algo.blockchain.stream import PriceVolumeStream, PriceVolumeDataStore
+from algo.strategy.analytics import process_market_df
+import time
+import unittest
+from algo.universe.universe import SimpleUniverse
 from algo.blockchain.process_volumes import SwapScraper
 from algo.blockchain.process_prices import PriceScraper
 from algo.blockchain.utils import datetime_to_int
@@ -61,8 +63,6 @@ class TestData(unittest.TestCase):
 
         client = TinymanOldnetClient()
 
-        pool = client.fetch_pool(asset1, asset2)
-
         ps = PriceScraper(client, asset1, asset2)
 
         async def main():
@@ -71,3 +71,37 @@ class TestData(unittest.TestCase):
                     print(tx)
 
         asyncio.run(main())
+
+
+class TestStream(unittest.TestCase):
+
+    def __init__(self, *args, **kwargs):
+
+        logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                            level=logging.DEBUG)
+
+        super().__init__(*args, **kwargs)
+
+    def test_stream(self):
+        blockid = 19241100
+        universe = SimpleUniverse.from_cache('liquid_algo_pools_nousd_prehack')
+
+        pvs = PriceVolumeDataStore(blockid, universe)
+        ti = time.time()
+        pvs.scrape()
+        print(f'Scraped data since block {blockid} in {time.time() - ti} seconds.')
+        for i in range(10):
+            time.sleep(1)
+            ti = time.time()
+            pvs.scrape()
+            print(f'Scraped 1 seconds of data in {time.time() - ti} seconds.')
+
+        prices = pvs.prices()
+        volumes = pvs.volumes()
+
+        # remove pools without algo
+        prices = prices[prices['asset2'] == 0]
+        volumes = volumes[volumes['asset2'] == 0]
+
+        market_data = process_market_df(prices, volumes)
+        print(market_data)

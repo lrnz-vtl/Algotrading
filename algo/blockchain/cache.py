@@ -1,6 +1,6 @@
 import logging
 import aiohttp
-from algo.universe.universe import SmallUniverse
+from algo.universe.universe import SimpleUniverse
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa
@@ -88,7 +88,7 @@ class DataCacher(ABC):
                  date_max: Optional[datetime.datetime]):
 
         self.client = client
-        self.pools = [(x.asset1_id, x.asset2_id) for x in SmallUniverse.from_cache(cache_file).pools]
+        self.pools = [(x.asset1_id, x.asset2_id) for x in SimpleUniverse.from_cache(cache_file).pools]
 
         self.dateScheduler = DateScheduler(date_min, date_max)
 

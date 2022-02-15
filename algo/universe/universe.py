@@ -1,22 +1,25 @@
 from __future__ import annotations
 import os.path
-from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, PoolIdStore
+from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, PoolIdStore, load_pool_info
 import json
 import dataclasses
 
 from definitions import ROOT_DIR
 
 UNIVERSE_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches', 'universe')
+SIMPLEUNIVERSE_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches', 'simple_universe')
 
 
-class SmallUniverse:
+class SimpleUniverse:
     def __init__(self, pools: list[PoolId]):
         self.pools = pools
 
     @staticmethod
-    def from_cache(cache_file: str) -> SmallUniverse:
-        pool_store = PoolIdStore.from_cache(cache_file)
-        return SmallUniverse(pool_store.pools)
+    def from_cache(universe_cache_name: str) -> SimpleUniverse:
+        cache_file = os.path.join(SIMPLEUNIVERSE_CACHE_BASEDIR, universe_cache_name, 'universe.json')
+        pool_store = load_pool_info(cache_file)
+        return SimpleUniverse(pool_store.pools)
+
 
 class Universe:
 

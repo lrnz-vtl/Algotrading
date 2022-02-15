@@ -3,7 +3,7 @@ import aiohttp
 import requests
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.requests import query_transactions
+from algo.blockchain.algo_requests import query_transactions
 from base64 import b64decode, b64encode
 import warnings
 import time

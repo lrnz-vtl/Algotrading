@@ -72,9 +72,6 @@ def optimal_amount_buy_asset(signal_bps: float,
     if impact_bps < 0:
         impact_bps = 0
 
-    if impact_bps > 0:
-        pass
-
     asset_price = current_other_asset_reserves / current_asset_reserves
 
     f_bps = signal_bps - impact_bps - FEE_BPS - EXPECTED_SLIPPAGE_BPS - linear_risk_penalty
@@ -88,7 +85,6 @@ def optimal_amount_buy_asset(signal_bps: float,
     # Expected profit in the reference currency
     # <Profit> = Amount * Price (f_bps - avg_impact_cost_coef * Amount) - quadratic_risk_penalty * Amount^2 - fixed_fee_other
 
-    # TODO FIXME
     amount_profit_argmax = int(f_bps / (2 * (avg_impact_cost_coef + asset_price*quadratic_risk_penalty)))
 
     max_profit_other = (amount_profit_argmax * asset_price * f_bps / 2.0) - fixed_fee_other
@@ -115,7 +111,6 @@ class Optimizer:
         self.asset1 = asset1
         self.risk_coef = risk_coef
         assert self.asset1 > 0
-
         self.logger = logging.getLogger(__name__)
 
     def optimal_amount_swap(self, signal_bps: float,
