@@ -8,6 +8,11 @@ from definitions import ROOT_DIR
 def datetime_to_int(t: datetime.datetime):
     return int(t.timestamp())
 
+def int_to_datetime(t: int):
+    return datetime.datetime.fromtimestamp(t)
+
+def int_to_rfc3339(t: int):
+    return datetime.datetime.fromtimestamp(t).isoformat()+'Z'
 
 def generator_to_df(gen, time_columns=('time',)):
     df = pd.DataFrame(gen)

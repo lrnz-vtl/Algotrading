@@ -175,8 +175,7 @@ class PriceVolumeDataStore:
         self.price_volume_stream = price_volume_stream
 
         self.address_ids_map = self.price_volume_stream.address_ids_map
-        self.prices_ = {ids: list() for ids in self.address_ids_map.values()}
-        self.volumes_ = {ids: list() for ids in self.address_ids_map.values()}
+        self._reset()
 
     def _gen_df(self, data_map):
         for ids, data in data_map.items():
@@ -184,6 +183,10 @@ class PriceVolumeDataStore:
             df['asset1'] = ids[0]
             df['asset2'] = ids[1]
             yield df
+
+    def _reset(self):
+        self.prices_ = {ids: list() for ids in self.address_ids_map.values()}
+        self.volumes_ = {ids: list() for ids in self.address_ids_map.values()}
 
     def volumes(self):
         return pd.concat(self._gen_df(self.volumes_))
@@ -200,3 +203,8 @@ class PriceVolumeDataStore:
             else:
                 raise ValueError
             update_arr[update.asset_ids].append(update.market_update)
+
+    def update(self, prices, volumes):
+        self._reset()
+        self.scrape()
+        return prices.append(self.prices()), volumes.append(self.volumes())

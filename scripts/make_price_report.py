@@ -4,22 +4,7 @@ from algo.blockchain.utils import load_algo_pools
 from algo.strategy.analytics import process_market_df
 import argparse
 
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-p', dest='price_cache_name', type=str, required=True)
-    parser.add_argument('-v', dest='volume_cache_name', type=str, required=True)
-
-    args = parser.parse_args()
-
-    price_cache = args.price_cache_name
-    volume_cache = args.volume_cache_name
-
-    dfp = load_algo_pools(price_cache, 'prices')
-    dfv = load_algo_pools(volume_cache, 'volumes')
-    df = process_market_df(dfp, dfv)
-
+def price_report(df, filename='price_report.pdf'):
     keys = ['time_5min', 'asset1', 'asset2']
 
     keyname = 'asset1'
@@ -48,3 +33,20 @@ if __name__ == '__main__':
 
     plt.xticks(rotation=35);
     plt.savefig('price_report.pdf')
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', dest='price_cache_name', type=str, required=True)
+    parser.add_argument('-v', dest='volume_cache_name', type=str, required=True)
+
+    args = parser.parse_args()
+
+    price_cache = args.price_cache_name
+    volume_cache = args.volume_cache_name
+
+    dfp = load_algo_pools(price_cache, 'prices')
+    dfv = load_algo_pools(volume_cache, 'volumes')
+    df = process_market_df(dfp, dfv)
+
+    price_report(df)

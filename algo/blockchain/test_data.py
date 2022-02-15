@@ -111,10 +111,10 @@ class TestStream(unittest.TestCase):
 
         self.logger.info(f'Scraped {time_max-time_min} seconds of data in {seconds} seconds.')
         for i in range(10):
-            time.sleep(1)
+            time.sleep(100)
             ti = time.time()
             pvs.scrape()
-            self.logger.info(f'Scraped 1 seconds of data in {time.time() - ti} seconds.')
+            self.logger.info(f'Scraped 100 seconds of data in {time.time() - ti} seconds.')
 
         prices = pvs.prices()
         volumes = pvs.volumes()
