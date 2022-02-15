@@ -1,6 +1,6 @@
 import logging
 import aiohttp
-from algo.blockchain.algo_requests import QueryParams
+from algo.blockchain.algo_requests import QueryParams, get_current_round
 from algo.blockchain.stream import PriceVolumeStream, PriceVolumeDataStore, DataStream
 from algo.strategy.analytics import process_market_df
 import time
@@ -12,7 +12,6 @@ from algo.blockchain.utils import datetime_to_int
 from tinyman.v1.client import TinymanMainnetClient
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
 import datetime
-import requests
 import asyncio
 
 
@@ -91,11 +90,7 @@ class TestStream(unittest.TestCase):
     def test_stream(self):
         universe = SimpleUniverse.from_cache('liquid_algo_pools_nousd_prehack')
 
-        url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
-        req = requests.get(url=url).json()
-        current_round = int(req['current-round'])
-
-        min_round = current_round - 1000
+        min_round = get_current_round() - 100
 
         query_params = QueryParams(min_block=min_round)
 
@@ -107,6 +102,9 @@ class TestStream(unittest.TestCase):
 
         prices = pvs.prices()
         volumes = pvs.volumes()
+
+        market_data = process_market_df(prices, volumes)
+        self.logger.info(market_data)
 
         time_max = max(prices['time'].max(), volumes['time'].max())
         time_min = min(prices['time'].min(), volumes['time'].min())

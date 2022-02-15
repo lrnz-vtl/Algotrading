@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.algo_requests import query_transactions
+from algo.blockchain.algo_requests import query_transactions, QueryParams
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
@@ -30,7 +30,8 @@ async def query_transactions_for_pool(session: aiohttp.ClientSession,
     async for tx in query_transactions(session=session,
                                        params={'address': pool_address},
                                        num_queries=num_queries,
-                                       before_time=before_time):
+                                       query_params=QueryParams(before_time=before_time)
+                                       ):
 
         try:
             if tx['tx-type'] == 'axfer':
@@ -128,7 +129,7 @@ class SwapScraper(DataScraper):
                             asset1_amount = transaction_out.amount
                         else:
                             raise ValueError
-                        assert transaction_in.amount > 0 and transaction_out.amount < 0
+                        assert transaction_in.amount > 0 > transaction_out.amount
 
                         yield Swap(asset1_amount=asset1_amount,
                                    asset2_amount=asset2_amount,

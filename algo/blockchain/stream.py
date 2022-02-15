@@ -67,16 +67,50 @@ class DataStream:
 
 @dataclass
 class PriceOrVolumeUpdate:
-    pool_address: str
+    asset_ids: tuple[int, int]
     market_update: Union[PoolState, Swap]
+
+
+@dataclass
+class PriceUpdate:
+    asset_ids: tuple[int, int]
+    price_update: PoolState
+
+
+def only_price(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[PriceUpdate, Any, Any]:
+    for x in gen:
+        if isinstance(x.market_update, PoolState):
+            yield PriceUpdate(x.asset_ids, x.market_update)
+
+
+def filter_last_prices(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[PriceOrVolumeUpdate, Any, Any]:
+    last_time = 0
+    last_price = None
+    for update in gen:
+        if isinstance(update.market_update, Swap):
+            yield update
+        elif isinstance(update.market_update, PoolState):
+            time = update.market_update.time
+            if last_price is not None:
+                assert time >= last_time
+                if time > last_time:
+                    yield last_price
+            last_price = update
+            last_time = time
+        else:
+            raise ValueError
+    if last_price:
+        yield last_price
 
 
 class PriceVolumeStream:
     def __init__(self, data_stream: DataStream):
         self.data_stream = data_stream
-        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in data_stream.universe.pools}
-        self.transaction_in_ = {pool: None for pool in self.pools.keys()}
-        self.transaction_fee_ = {pool: False for pool in self.pools.keys()}
+
+        self.address_ids_map = {x.address: (x.asset1_id, x.asset2_id) for x in data_stream.universe.pools}
+
+        self.transaction_in_ = {pool: None for pool in self.address_ids_map.keys()}
+        self.transaction_fee_ = {pool: False for pool in self.address_ids_map.keys()}
 
     def scrape(self) -> Generator[PriceOrVolumeUpdate, Any, Any]:
 
@@ -87,49 +121,50 @@ class PriceVolumeStream:
                    and tx.asset_id in [asset1_id, asset2_id] \
                    and not is_fee_payment(tx)
 
-        for pool, tx in self.data_stream.next_transaction():
+        for address, tx in self.data_stream.next_transaction():
             pt = None
+            asset_ids = self.address_ids_map[address]
             if tx['tx-type'] == 'appl':
                 ps = get_pool_state_txn(tx)
                 if ps:
-                    yield PriceOrVolumeUpdate(pool, ps)
+                    yield PriceOrVolumeUpdate(asset_ids, ps)
             elif tx['tx-type'] == 'pay':
                 key = 'payment-transaction'
-                pt = get_pool_transaction_txn(tx, pool, key, 0)
+                pt = get_pool_transaction_txn(tx, address, key, 0)
             elif tx['tx-type'] == 'axfer':
                 key = 'asset-transfer-transaction'
-                pt = get_pool_transaction_txn(tx, pool, key, tx[key]['asset-id'])
+                pt = get_pool_transaction_txn(tx, address, key, tx[key]['asset-id'])
             if pt:
-                asset1_id = self.pools[pool][0]
-                asset2_id = self.pools[pool][1]
+                asset1_id = asset_ids[0]
+                asset2_id = asset_ids[1]
                 # adapted from algo.blockchain.process_volumes.SwapScraper.scrape
-                if self.transaction_fee_[pool]:
-                    if self.transaction_in_[pool]:
-                        if is_transaction_out(pt, self.transaction_in_[pool], asset1_id, asset2_id):
-                            if self.transaction_in_[pool].asset_id == asset1_id and pt.asset_id == asset2_id:
-                                asset1_amount = self.transaction_in_[pool].amount
+                if self.transaction_fee_[address]:
+                    if self.transaction_in_[address]:
+                        if is_transaction_out(pt, self.transaction_in_[address], asset1_id, asset2_id):
+                            if self.transaction_in_[address].asset_id == asset1_id and pt.asset_id == asset2_id:
+                                asset1_amount = self.transaction_in_[address].amount
                                 asset2_amount = pt.amount
-                            elif self.transaction_in_[pool].asset_id == asset2_id and pt.asset_id == asset1_id:
-                                asset2_amount = self.transaction_in_[pool].amount
+                            elif self.transaction_in_[address].asset_id == asset2_id and pt.asset_id == asset1_id:
+                                asset2_amount = self.transaction_in_[address].amount
                                 asset1_amount = pt.amount
                             else:
                                 raise ValueError
-                            assert self.transaction_in_[pool].amount > 0 > pt.amount
+                            assert self.transaction_in_[address].amount > 0 > pt.amount
                             swap = Swap(asset1_amount=asset1_amount,
                                         asset2_amount=asset2_amount,
                                         counterparty=pt.counterparty,
                                         block=pt.block,
                                         time=pt.time)
-                            yield PriceOrVolumeUpdate(pool, swap)
-                        self.transaction_fee_[pool] = False
-                        self.transaction_in_[pool] = None
+                            yield PriceOrVolumeUpdate(asset_ids, swap)
+                        self.transaction_fee_[address] = False
+                        self.transaction_in_[address] = None
                     else:
                         if pt.amount > 0 and not is_fee_payment(pt) and pt.asset_id in [asset1_id, asset2_id]:
-                            self.transaction_in_[pool] = pt
+                            self.transaction_in_[address] = pt
                         else:
-                            self.transaction_in_[pool] = None
+                            self.transaction_in_[address] = None
                 elif is_fee_payment(pt):
-                    self.transaction_fee_[pool] = True
+                    self.transaction_fee_[address] = True
 
 
 class PriceVolumeDataStore:
@@ -138,35 +173,22 @@ class PriceVolumeDataStore:
 
         self.price_volume_stream = price_volume_stream
 
-        self.pools = self.price_volume_stream.pools
-        self.prices_ = {pool: list() for pool in self.pools.keys()}
-        self.volumes_ = {pool: list() for pool in self.pools.keys()}
+        self.address_ids_map = self.price_volume_stream.address_ids_map
+        self.prices_ = {ids: list() for ids in self.address_ids_map.values()}
+        self.volumes_ = {ids: list() for ids in self.address_ids_map.values()}
+
+    def _gen_df(self, data_map):
+        for ids, data in data_map.items():
+            df = pd.DataFrame(data)
+            df['asset1'] = ids[0]
+            df['asset2'] = ids[1]
+            yield df
 
     def volumes(self):
-        def gen_volumes():
-            for pool in self.volumes_:
-                df = pd.DataFrame(self.volumes_[pool])
-                df['asset1'] = self.pools[pool][0]
-                df['asset2'] = self.pools[pool][1]
-                yield df
-
-        return pd.concat(gen_volumes())
+        return pd.concat(self._gen_df(self.volumes_))
 
     def prices(self):
-        def gen_prices():
-            for pool in self.prices_:
-                df = pd.DataFrame(self.prices_[pool])
-                df['asset1'] = self.pools[pool][0]
-                df['asset2'] = self.pools[pool][1]
-                yield df
-
-        return pd.concat(gen_prices())
-
-    def volume(self, pool):
-        return pd.DataFrame(self.volumes_[pool])
-
-    def price(self, pool):
-        return pd.DataFrame(self.prices_[pool])
+        return pd.concat(self._gen_df(self.prices_))
 
     def scrape(self):
         for update in self.price_volume_stream.scrape():
@@ -176,4 +198,4 @@ class PriceVolumeDataStore:
                 update_arr = self.prices_
             else:
                 raise ValueError
-            update_arr[update.pool_address].append(update.market_update)
+            update_arr[update.asset_ids].append(update.market_update)

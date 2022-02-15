@@ -2,6 +2,7 @@ from typing import Optional
 import datetime
 import aiohttp
 from dataclasses import dataclass
+import requests
 
 
 @dataclass
@@ -19,6 +20,12 @@ class QueryParams:
         if self.min_block is not None:
             params['min-round'] = self.min_block
         return params
+
+
+def get_current_round():
+    url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
+    req = requests.get(url=url).json()
+    return int(req['current-round'])
 
 
 async def query_transactions(session: aiohttp.ClientSession,
