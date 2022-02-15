@@ -84,23 +84,24 @@ def only_price(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[Price
 
 
 def filter_last_prices(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[PriceOrVolumeUpdate, Any, Any]:
-    last_time = 0
-    last_price = None
+    last_time: dict[tuple[int, int], int] = {}
+    last_price: dict[tuple[int, int], PriceOrVolumeUpdate] = {}
     for update in gen:
         if isinstance(update.market_update, Swap):
             yield update
         elif isinstance(update.market_update, PoolState):
+            ids = update.asset_ids
             time = update.market_update.time
-            if last_price is not None:
-                assert time >= last_time
-                if time > last_time:
-                    yield last_price
-            last_price = update
-            last_time = time
+            if last_price.get(ids):
+                assert time >= last_time[ids]
+                if time > last_time[ids]:
+                    yield last_price[ids]
+            last_price[ids] = update
+            last_time[ids] = time
         else:
             raise ValueError
-    if last_price:
-        yield last_price
+    for x in last_price.values():
+        yield x
 
 
 class PriceVolumeStream:
