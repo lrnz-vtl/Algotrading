@@ -1,6 +1,7 @@
 import logging
 import aiohttp
-from algo.blockchain.stream import PriceVolumeStream, PriceVolumeDataStore
+from algo.blockchain.algo_requests import QueryParams
+from algo.blockchain.stream import PriceVolumeStream, PriceVolumeDataStore, DataStream
 from algo.strategy.analytics import process_market_df
 import time
 import unittest
@@ -11,6 +12,7 @@ from algo.blockchain.utils import datetime_to_int
 from tinyman.v1.client import TinymanMainnetClient
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
 import datetime
+import requests
 import asyncio
 
 
@@ -50,8 +52,10 @@ class TestData(unittest.TestCase):
 
         async def main():
             async with aiohttp.ClientSession() as session:
-                async for tx in ps.scrape(session, datetime_to_int(self.date_min), num_queries=n_queries,
-                                          before_time=None):
+                async for tx in ps.scrape(session, datetime_to_int(self.date_min),
+                                          num_queries=n_queries,
+                                          query_params=QueryParams()
+                                          ):
                     print(tx)
 
         asyncio.run(main())
@@ -67,7 +71,7 @@ class TestData(unittest.TestCase):
 
         async def main():
             async with aiohttp.ClientSession() as session:
-                async for tx in ps.scrape(session, 0, num_queries=n_queries, before_time=None):
+                async for tx in ps.scrape(session, 0, num_queries=n_queries, query_params=QueryParams()):
                     print(tx)
 
         asyncio.run(main())
@@ -78,23 +82,41 @@ class TestStream(unittest.TestCase):
     def __init__(self, *args, **kwargs):
 
         logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
-                            level=logging.DEBUG)
+                            level=logging.INFO)
+
+        self.logger = logging.getLogger(__name__)
 
         super().__init__(*args, **kwargs)
 
     def test_stream(self):
-        blockid = 19241100
         universe = SimpleUniverse.from_cache('liquid_algo_pools_nousd_prehack')
 
-        pvs = PriceVolumeDataStore(blockid, universe)
+        url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
+        req = requests.get(url=url).json()
+        current_round = int(req['current-round'])
+
+        min_round = current_round - 1000
+
+        query_params = QueryParams(min_block=min_round)
+
+        ds = DataStream(universe, query_params)
+        pvs = PriceVolumeDataStore(PriceVolumeStream(ds))
         ti = time.time()
         pvs.scrape()
-        print(f'Scraped data since block {blockid} in {time.time() - ti} seconds.')
+        seconds = time.time() - ti
+
+        prices = pvs.prices()
+        volumes = pvs.volumes()
+
+        time_max = max(prices['time'].max(), volumes['time'].max())
+        time_min = min(prices['time'].min(), volumes['time'].min())
+
+        self.logger.info(f'Scraped {time_max-time_min} seconds of data in {seconds} seconds.')
         for i in range(10):
             time.sleep(1)
             ti = time.time()
             pvs.scrape()
-            print(f'Scraped 1 seconds of data in {time.time() - ti} seconds.')
+            self.logger.info(f'Scraped 1 seconds of data in {time.time() - ti} seconds.')
 
         prices = pvs.prices()
         volumes = pvs.volumes()
@@ -104,4 +126,4 @@ class TestStream(unittest.TestCase):
         volumes = volumes[volumes['asset2'] == 0]
 
         market_data = process_market_df(prices, volumes)
-        print(market_data)
+        self.logger.debug(market_data)

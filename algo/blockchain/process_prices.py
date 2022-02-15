@@ -3,7 +3,7 @@ import aiohttp
 import requests
 from dataclasses import dataclass
 from typing import Optional
-from algo.blockchain.algo_requests import query_transactions
+from algo.blockchain.algo_requests import query_transactions, QueryParams
 from base64 import b64decode, b64encode
 import warnings
 import time
@@ -71,7 +71,7 @@ class PriceScraper(DataScraper):
 
     async def scrape(self, session: aiohttp.ClientSession,
                      timestamp_min: int,
-                     before_time: Optional[datetime.datetime],
+                     query_params: QueryParams,
                      num_queries: Optional[int] = None):
         prev_time = None
 
@@ -80,7 +80,7 @@ class PriceScraper(DataScraper):
         async for tx in query_transactions(session=session,
                                            params={'address': self.address, 'tx-type': 'appl'},
                                            num_queries=num_queries,
-                                           before_time=before_time):
+                                           query_params=query_params):
 
             self.logger.debug(f'Received transaction for assets {self.assets}, '
                               f'block_time={datetime.datetime.fromtimestamp(tx["round-time"])}')

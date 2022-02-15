@@ -1,5 +1,6 @@
 import logging
 import aiohttp
+from algo.blockchain.algo_requests import QueryParams
 from algo.universe.universe import SimpleUniverse
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
@@ -145,7 +146,8 @@ class DataCacher(ABC):
         async for data in groupby_days(scraper.scrape(session=session,
                                                       num_queries=None,
                                                       timestamp_min=datetime_to_int(date_min),
-                                                      before_time=date_max)):
+                                                      query_params=QueryParams(before_time=date_max))
+                                       ):
             df = generator_to_df(data)
             dates = df['time'].dt.date.unique()
             df['time'] = df['time'].view(dtype=np.int64) // 1000000000

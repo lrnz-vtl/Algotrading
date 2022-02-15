@@ -1,17 +1,34 @@
 from typing import Optional
 import datetime
 import aiohttp
+from dataclasses import dataclass
 
 
-async def query_transactions(session:aiohttp.ClientSession,
+@dataclass
+class QueryParams:
+    after_time: Optional[datetime.date] = None
+    before_time: Optional[datetime.date] = None
+    min_block: Optional[int] = None
+
+    def make_params(self):
+        params = {}
+        if self.before_time is not None:
+            params['before-time'] = self.before_time.strftime('%Y-%m-%d')
+        if self.after_time is not None:
+            params['after-time'] = self.after_time.strftime('%Y-%m-%d')
+        if self.min_block is not None:
+            params['min-round'] = self.min_block
+        return params
+
+
+async def query_transactions(session: aiohttp.ClientSession,
                              params: dict,
                              num_queries: Optional[int],
-                             before_time: Optional[datetime.datetime]):
+                             query_params: QueryParams):
 
     query = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
 
-    if before_time is not None:
-        params = {**params, **{'before-time': before_time.strftime('%Y-%m-%d')}}
+    params = {**params, **query_params.make_params()}
 
     async with session.get(query, params=params) as resp:
         resp = await resp.json()

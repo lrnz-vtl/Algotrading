@@ -1,11 +1,13 @@
 import logging
 from algo.blockchain.process_volumes import PoolTransaction, Swap, is_fee_payment
 from algo.blockchain.process_prices import PoolState, get_pool_state_txn
+from algo.blockchain.algo_requests import QueryParams
 from algo.universe.universe import SimpleUniverse
 from typing import Optional, Union, Generator, Any
 import pandas as pd
 import requests
 from dataclasses import dataclass
+import datetime
 
 
 def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: int):
@@ -28,11 +30,12 @@ def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: in
 
 
 class DataStream:
-    def __init__(self, min_round: int, universe: SimpleUniverse, next_token: Optional[str] = None):
+    def __init__(self, universe: SimpleUniverse, query_params: QueryParams, next_token: Optional[str] = None):
 
+        self.universe = universe
         self.pools = {x.address for x in universe.pools}
         self.url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
-        self.params = {'min-round': min_round}
+        self.params = query_params.make_params()
         if next_token:
             self.params['next'] = next_token
 
@@ -42,7 +45,10 @@ class DataStream:
         while True:
             req = requests.get(url=self.url, params=self.params).json()
 
-            self.logger.debug('Queried transaction group')
+            first_time = None
+            if req['transactions']:
+                first_time = datetime.datetime.fromtimestamp(req['transactions'][0]['round-time'])
+            self.logger.debug(f'Queried transaction group, time={first_time}')
 
             for tx in req['transactions']:
                 pool = None
@@ -66,9 +72,9 @@ class PriceOrVolumeUpdate:
 
 
 class PriceVolumeStream:
-    def __init__(self, min_round: int, universe: SimpleUniverse):
-        self.dataStream = DataStream(min_round, universe)
-        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in universe.pools}
+    def __init__(self, data_stream: DataStream):
+        self.data_stream = data_stream
+        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in data_stream.universe.pools}
         self.transaction_in_ = {pool: None for pool in self.pools.keys()}
         self.transaction_fee_ = {pool: False for pool in self.pools.keys()}
 
@@ -81,7 +87,7 @@ class PriceVolumeStream:
                    and tx.asset_id in [asset1_id, asset2_id] \
                    and not is_fee_payment(tx)
 
-        for pool, tx in self.dataStream.next_transaction():
+        for pool, tx in self.data_stream.next_transaction():
             pt = None
             if tx['tx-type'] == 'appl':
                 ps = get_pool_state_txn(tx)
@@ -128,11 +134,11 @@ class PriceVolumeStream:
 
 class PriceVolumeDataStore:
 
-    def __init__(self, min_round: int, universe: SimpleUniverse):
+    def __init__(self, price_volume_stream: PriceVolumeStream):
 
-        self.price_volume_stream = PriceVolumeStream(min_round, universe)
+        self.price_volume_stream = price_volume_stream
 
-        self.pools = {x.address: (x.asset1_id, x.asset2_id) for x in universe.pools}
+        self.pools = self.price_volume_stream.pools
         self.prices_ = {pool: list() for pool in self.pools.keys()}
         self.volumes_ = {pool: list() for pool in self.pools.keys()}
 
