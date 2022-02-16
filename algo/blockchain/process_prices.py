@@ -28,7 +28,7 @@ class PoolState:
     time: int
     asset1_reserves: int
     asset2_reserves: int
-    order_in_block: int
+    reverse_order_in_block: int
 
 def get_pool_state(pool_address: str):
     query = f'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
@@ -37,7 +37,7 @@ def get_pool_state(pool_address: str):
     return PoolState(int(time.time()), get_state_int(state, 's1'), get_state_int(state,'s2'))
 
 
-def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_order_in_block: Optional[int] = None):
+def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_order_in_block: Optional[int] = None):
     if tx['tx-type'] != 'appl':
         warnings.warn('Attempting to extract pool state from non application call')
 
@@ -53,11 +53,11 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_order_in_
         return None
 
     if prev_time and prev_time==tx['round-time']:
-        order_in_block = prev_order_in_block+1
+        reverse_order_in_block = prev_reverse_order_in_block+1
     else:
-        order_in_block = 0
+        reverse_order_in_block = 0
     
-    return PoolState(tx['round-time'], s1, s2, order_in_block)
+    return PoolState(tx['round-time'], s1, s2, reverse_order_in_block)
 
 
 class PriceScraper(DataScraper):
@@ -81,7 +81,7 @@ class PriceScraper(DataScraper):
                      query_params: QueryParams,
                      num_queries: Optional[int] = None):
         prev_time = None
-        prev_order_in_block = None
+        prev_reverse_order_in_block = None
 
         self.logger.debug(f'Started scraping price for assets {self.assets}')
 
@@ -97,11 +97,11 @@ class PriceScraper(DataScraper):
                 continue
             if tx['round-time'] < timestamp_min:
                 break
-            ps = get_pool_state_txn(tx, prev_time, prev_order_in_block)
+            ps = get_pool_state_txn(tx, prev_time, prev_reverse_order_in_block)
             if not ps or (self.skip_same_time and prev_time and prev_time == ps.time):
                 continue
             prev_time = ps.time
-            prev_order_in_block = ps.order_in_block
+            prev_reverse_order_in_block = ps.reverse_order_in_block
             yield ps
 
         self.logger.debug(f'Stopped scraping price for assets {self.assets}')

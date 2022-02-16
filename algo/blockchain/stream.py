@@ -136,7 +136,7 @@ class PriceVolumeStream:
                         cnt = 0
                         while self.app_tx_current_block[address]:
                             prev_block_ps = self.app_tx_current_block[address].pop()
-                            prev_block_ps.order_in_block=cnt
+                            prev_block_ps.reverse_order_in_block=cnt
                             cnt+=1
                             yield PriceOrVolumeUpdate(asset_ids, prev_block_ps)
                         self.app_tx_current_block[address].append(ps)
