@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # TODO Check me
 FIXED_FEE_ALGOS = 0.003
-FIXED_FEE_MUALGOS = FIXED_FEE_ALGOS * 10 ** 6
+FIXED_FEE_MUALGOS = int(FIXED_FEE_ALGOS * 10 ** 6)
 
 FEE_BPS = (1000 / 997 - 1.0)
 
@@ -107,11 +107,11 @@ def optimal_amount_buy_asset(signal_bps: float,
 
     amount_profit_argmax = int(lin / (2 * quad))
 
-    max_profit_other = lin**2 / (4 * quad) - const
+    max_profit_other = lin ** 2 / (4 * quad) - const
     if max_profit_other <= 0:
         return None
 
-    min_profitable_amount = (lin - np.sqrt(lin*lin - 4 * const * quad)) / (2 * quad)
+    min_profitable_amount = (lin - np.sqrt(lin * lin - 4 * const * quad)) / (2 * quad)
     assert min_profitable_amount > 0
     min_profitable_amount = math.ceil(min_profitable_amount)
 
@@ -166,9 +166,6 @@ def fetch_fixed_input_swap_quote(asset1: Asset, asset2: Asset,
         slippage=slippage,
     )
     return quote
-
-
-
 
 
 class Optimizer:
@@ -241,7 +238,6 @@ class Optimizer:
 
         if optimal_swap is not None:
 
-
             if optimal_swap.optimal_swap.asset_buy == AssetType.ALGO:
                 # What we sell
                 asset_in = Asset(self.asset1)
@@ -254,8 +250,8 @@ class Optimizer:
                 asset_in = Asset(0)
                 input_supply = current_mualgo_reserves
                 output_supply = current_asa_reserves
-                # TODO Subtract algo fees of transaction here?
-                sell_amount_available = current_mualgo_position
+                # FIXME What should we subtract here?
+                sell_amount_available = current_mualgo_position - FIXED_FEE_MUALGOS
 
             k = input_supply * output_supply
 

@@ -83,25 +83,25 @@ def only_price(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[Price
             yield PriceUpdate(x.asset_ids, x.market_update)
 
 
+# FIXME this does not preserve chronological across different pools
 def filter_last_prices(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[PriceOrVolumeUpdate, Any, Any]:
-    last_time: dict[tuple[int, int], int] = {}
-    last_price: dict[tuple[int, int], PriceOrVolumeUpdate] = {}
+    last_time: Optional[int] = None
+    last_price: Optional[PriceOrVolumeUpdate] = None
     for update in gen:
         if isinstance(update.market_update, Swap):
             yield update
         elif isinstance(update.market_update, PoolState):
-            ids = update.asset_ids
             time = update.market_update.time
-            if last_price.get(ids):
-                assert time >= last_time[ids]
-                if time > last_time[ids]:
-                    yield last_price[ids]
-            last_price[ids] = update
-            last_time[ids] = time
+            if last_price:
+                assert time >= last_time
+                if time > last_time:
+                    yield last_price
+            last_price = update
+            last_time = time
         else:
             raise ValueError
-    for x in last_price.values():
-        yield x
+    if last_price:
+        yield last_price
 
 
 class PoolStateQueue:
@@ -134,7 +134,6 @@ class PriceVolumeStream:
 
         self.transaction_in_ = {pool: None for pool in self.address_ids_map.keys()}
         self.transaction_fee_ = {pool: False for pool in self.address_ids_map.keys()}
-        self.app_tx_current_block = {}
 
     def scrape(self) -> Generator[PriceOrVolumeUpdate, Any, Any]:
 
