@@ -104,18 +104,18 @@ def filter_last_prices(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generat
         yield x
 
 
-class PoolStateStack:
+class PoolStateQueue:
 
     def __init__(self):
         self.app_tx_current_block: list[tuple[tuple[int, int], PoolState]] = []
         self.last_block_time = None
 
     def flush(self):
-        reverse_block_order = 0
-        while self.app_tx_current_block:
-            prev_asset_ids, prev_block_ps = self.app_tx_current_block.pop()
+        reverse_block_order = len(self.app_tx_current_block) - 1
+        for prev_asset_ids, prev_block_ps in self.app_tx_current_block:
             yield PriceOrVolumeUpdate(prev_asset_ids, prev_block_ps.with_reverse_order(reverse_block_order))
             reverse_block_order += 1
+        self.app_tx_current_block = []
 
     def push_and_yield(self, ps, asset_ids):
         if self.last_block_time:
@@ -145,7 +145,7 @@ class PriceVolumeStream:
                    and tx.asset_id in [asset1_id, asset2_id] \
                    and not is_fee_payment(tx)
 
-        price_stack = PoolStateStack()
+        price_queue = PoolStateQueue()
 
         for address, tx in self.data_stream.next_transaction():
             pt = None
@@ -154,7 +154,7 @@ class PriceVolumeStream:
             if tx['tx-type'] == 'appl':
                 ps = get_pool_state_txn(tx)
                 if ps:
-                    yield from price_stack.push_and_yield(ps, asset_ids)
+                    yield from price_queue.push_and_yield(ps, asset_ids)
 
             elif tx['tx-type'] == 'pay':
                 key = 'payment-transaction'
@@ -194,7 +194,7 @@ class PriceVolumeStream:
                 elif is_fee_payment(pt):
                     self.transaction_fee_[address] = True
 
-        yield from price_stack.flush()
+        yield from price_queue.flush()
 
 
 class PriceVolumeDataStore:
