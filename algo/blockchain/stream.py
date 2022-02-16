@@ -112,7 +112,7 @@ class PriceVolumeStream:
 
         self.transaction_in_ = {pool: None for pool in self.address_ids_map.keys()}
         self.transaction_fee_ = {pool: False for pool in self.address_ids_map.keys()}
-        self.app_tx_current_block = {pool: list() for pool in self.address_ids_map.keys()}
+        self.app_tx_current_block = {}
 
     def scrape(self) -> Generator[PriceOrVolumeUpdate, Any, Any]:
 
@@ -129,8 +129,9 @@ class PriceVolumeStream:
             if tx['tx-type'] == 'appl':
                 ps = get_pool_state_txn(tx)
                 if ps:
-                    if not self.app_tx_current_block[address] \
-                       or self.app_tx_current_block[address][-1].time == ps.time:
+                    if address not in self.app_tx_current_block:
+                        self.app_tx_current_block[address]=[ps]
+                    elif self.app_tx_current_block[address][-1].time == ps.time:
                         self.app_tx_current_block[address].append(ps)
                     else:
                         cnt = 0
@@ -178,6 +179,14 @@ class PriceVolumeStream:
                 elif is_fee_payment(pt):
                     self.transaction_fee_[address] = True
 
+        for pool in list(self.app_tx_current_block):
+            cnt = 0
+            while self.app_tx_current_block[pool]:
+                prev_block_ps = self.app_tx_current_block[pool].pop()
+                prev_block_ps.reverse_order_in_block=cnt
+                cnt+=1
+                yield PriceOrVolumeUpdate(asset_ids, prev_block_ps)
+            del self.app_tx_current_block[pool]
 
 class PriceVolumeDataStore:
 
