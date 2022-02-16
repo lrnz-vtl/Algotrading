@@ -12,6 +12,7 @@ from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 from algo.universe.universe import SimpleUniverse
 
+
 def any_axis_1(x):
     if (isinstance(x, np.ndarray) and x.ndim == 2) or isinstance(x, pd.DataFrame):
         return x.any(axis=1)

@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from algo.blockchain.utils import generator_to_df
 from algo.blockchain.process_prices import PriceScraper
 from tinyman.v1.client import TinymanMainnetClient
+from algo.blockchain.algo_requests import QueryParams
+import aiohttp
 
 
 def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int = 0,
@@ -11,7 +13,8 @@ def plot_price(asset1_id: int, asset2_id: int, num_queries: int, timestamp: int 
     ps = PriceScraper(client, asset1_id, asset2_id)
     pool = client.fetch_pool(asset1=asset1_id, asset2=asset2_id)
 
-    df = generator_to_df(ps.scrape(num_queries, timestamp))
+    async with aiohttp.ClientSession() as session:
+        df = generator_to_df(ps.scrape(session, timestamp, QueryParams(), num_queries))
 
     if not inverse:
         price = df.asset2_reserves/df.asset1_reserves

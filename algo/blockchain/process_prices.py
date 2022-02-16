@@ -1,3 +1,4 @@
+from __future__ import  annotations
 import logging
 import aiohttp
 import requests
@@ -12,7 +13,6 @@ from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
-
 
 PRICE_CACHES_BASEDIR = f'{ROOT_DIR}/caches/prices'
 
@@ -30,11 +30,15 @@ class PoolState:
     asset2_reserves: int
     reverse_order_in_block: int
 
+    def with_reverse_order(self, reverse_order_in_block: int) -> PoolState:
+        return PoolState(self.time, self.asset1_reserves, self.asset2_reserves, reverse_order_in_block)
+
+
 def get_pool_state(pool_address: str):
     query = f'https://algoindexer.algoexplorerapi.io/v2/accounts/{pool_address}'
     resp = requests.get(query).json()['account']['apps-local-state'][0]
     state = {y['key']: y['value'] for y in resp['key-value']}
-    return PoolState(int(time.time()), get_state_int(state, 's1'), get_state_int(state,'s2'))
+    return PoolState(int(time.time()), get_state_int(state, 's1'), get_state_int(state, 's2'))
 
 
 def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_order_in_block: Optional[int] = None):
@@ -42,7 +46,7 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_o
         warnings.warn('Attempting to extract pool state from non application call')
 
     try:
-        state = {x['key'] : x['value'] for x in tx['local-state-delta'][0]['delta']}
+        state = {x['key']: x['value'] for x in tx['local-state-delta'][0]['delta']}
     except KeyError as e:
         # Looks like this can have a "global-state-delta" instead
         return None
@@ -52,11 +56,11 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_o
     if s1 is None or s2 is None:
         return None
 
-    if prev_time and prev_time==tx['round-time']:
-        reverse_order_in_block = prev_reverse_order_in_block+1
+    if prev_time and prev_time == tx['round-time']:
+        reverse_order_in_block = prev_reverse_order_in_block + 1
     else:
         reverse_order_in_block = 0
-    
+
     return PoolState(tx['round-time'], s1, s2, reverse_order_in_block)
 
 
@@ -109,7 +113,7 @@ class PriceScraper(DataScraper):
 
 class PriceCacher(DataCacher):
 
-    def __init__(self, client:TinymanClient,
+    def __init__(self, client: TinymanClient,
                  cache_file: str,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):

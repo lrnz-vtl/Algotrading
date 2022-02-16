@@ -81,7 +81,7 @@ class TestStream(unittest.TestCase):
     def __init__(self, *args, **kwargs):
 
         logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
-                            level=logging.INFO)
+                            level=logging.DEBUG)
 
         self.logger = logging.getLogger(__name__)
 
@@ -89,6 +89,8 @@ class TestStream(unittest.TestCase):
 
     def test_stream(self):
         universe = SimpleUniverse.from_cache('liquid_algo_pools_nousd_prehack')
+
+        sleep_seconds = 1
 
         min_round = get_current_round() - 100
 
@@ -111,10 +113,10 @@ class TestStream(unittest.TestCase):
 
         self.logger.info(f'Scraped {time_max-time_min} seconds of data in {seconds} seconds.')
         for i in range(10):
-            time.sleep(100)
+            time.sleep(sleep_seconds)
             ti = time.time()
             pvs.scrape()
-            self.logger.info(f'Scraped 100 seconds of data in {time.time() - ti} seconds.')
+            self.logger.info(f'Scraped {sleep_seconds} seconds of data in {time.time() - ti} seconds.')
 
         prices = pvs.prices()
         volumes = pvs.volumes()

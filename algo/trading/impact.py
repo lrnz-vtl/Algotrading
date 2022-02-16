@@ -1,6 +1,7 @@
 import datetime
 from dataclasses import dataclass
 import numpy as np
+from algo.trading.swapper import AlgoPoolSwap
 
 # Leading order Taylor expansions of the functions below
 impact_deflection_bps_perfraction = 2.0
@@ -13,7 +14,7 @@ def impact_deflection_bps(asset_pool_percentage: float) -> float:
     returns -> instantaneous percentage change of price of the token we buy in units of the token we sell
     """
     assert 0 <= asset_pool_percentage <= 1
-    return 1.0/(1.0 - asset_pool_percentage)**2 - 1.0
+    return 1.0 / (1.0 - asset_pool_percentage) ** 2 - 1.0
 
 
 def avg_impact_deflection_bps(asset_pool_percentage: float) -> float:
@@ -22,14 +23,7 @@ def avg_impact_deflection_bps(asset_pool_percentage: float) -> float:
     returns -> The average percentage price deflection paid per a single transaction per token bought
     """
     assert 0 <= asset_pool_percentage <= 1
-    return 1.0/(1.0 - asset_pool_percentage) - 1.0
-
-
-@dataclass
-class AlgoPoolSwap:
-    asset_buy: int
-    amount_buy: int
-    amount_sell: int
+    return 1.0 / (1.0 - asset_pool_percentage) - 1.0
 
 
 class ASAImpactState:
@@ -62,3 +56,17 @@ class ASAImpactState:
         delta = t - self.t
         return self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
 
+
+@dataclass
+class PositionAndImpactState:
+    impact: ASAImpactState
+    asa_position: int
+
+    def update(self, traded_swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
+        self.impact.update(traded_swap, mualgo_reserves, asa_reserves, t)
+        if traded_swap.asset_buy == 0:
+            self.asa_position -= traded_swap.amount_sell
+            # We can't short
+            assert self.asa_position >= 0
+        else:
+            self.asa_position += traded_swap.amount_buy
