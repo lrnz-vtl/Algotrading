@@ -114,7 +114,7 @@ class PoolStateQueue:
         reverse_block_order = len(self.app_tx_current_block) - 1
         for prev_asset_ids, prev_block_ps in self.app_tx_current_block:
             yield PriceOrVolumeUpdate(prev_asset_ids, prev_block_ps.with_reverse_order(reverse_block_order))
-            reverse_block_order += 1
+            reverse_block_order -= 1
         self.app_tx_current_block = []
 
     def push_and_yield(self, ps, asset_ids):
