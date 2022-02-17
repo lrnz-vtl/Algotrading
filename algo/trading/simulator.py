@@ -6,18 +6,20 @@ from .optimizer import Optimizer, AssetType, FIXED_FEE_ALGOS
 from matplotlib import pyplot as plt
 import numpy as np
 from algo.trading.signalprovider import PriceSignalProvider, DummySignalProvider
-from algo.blockchain.stream import PriceVolumeStream, DataStream, only_price, filter_last_prices, PoolState
+from algo.blockchain.stream import PriceVolumeStream, DataStream, only_price, filter_last_prices, \
+    PoolState, PriceUpdate, stream_from_price_df
 from abc import ABC, abstractmethod
 from algo.universe.universe import SimpleUniverse
 from algo.blockchain.algo_requests import QueryParams
-from typing import Callable
+from typing import Callable, Generator, Any, Optional
 from dataclasses import dataclass
 from datetime import timezone
-from algo.blockchain.utils import load_algo_pools
+from algo.blockchain.utils import load_algo_pools, make_filter_from_universe, int_to_tzaware_utc_datetime
 
 
 @dataclass
 class TradeRecord:
+    time: datetime.datetime
     asset_buy_id: int
     asset_sell_id: int
     asset_buy_amount: int
@@ -30,7 +32,8 @@ class Simulator:
                  signal_providers: dict[int, PriceSignalProvider],
                  pos_impact_states: dict[int, PositionAndImpactState],
                  universe: SimpleUniverse,
-                 start_date: datetime.date,
+                 seed_time: datetime.timedelta,
+                 price_stream: Generator[PriceUpdate, Any, Any],
                  simulation_step_seconds: int,
                  risk_coef: float,
                  initial_mualgo_position: int,
@@ -51,22 +54,22 @@ class Simulator:
 
         self.simulation_step = datetime.timedelta(seconds=simulation_step_seconds)
 
-        data_stream = DataStream(universe, query_params=QueryParams(after_time=start_date))
-        self.price_volume_stream = PriceVolumeStream(data_stream)
+        # self.initial_time = datetime.datetime(year=start_date.year, month=start_date.month, day=start_date.day,
+        #                                       tzinfo=timezone.utc)
 
-        self.initial_time = datetime.datetime(year=start_date.year, month=start_date.month, day=start_date.day,
-                                              tzinfo=timezone.utc)
+        # assert isinstance(self.initial_time, datetime.datetime)
+        # assert self.initial_time.tzinfo == timezone.utc
 
-        assert isinstance(self.initial_time, datetime.datetime)
-        assert self.initial_time.tzinfo == timezone.utc
+        self.price_stream = price_stream
+
+        # The amount of time we spend seeding the prices and signals without trading
+        self.seed_time = seed_time
 
         self.current_mualgo_position = initial_mualgo_position
 
         self.prices: dict[int, PoolState] = {}
 
     def trade_loop(self, time: datetime.datetime):
-
-        self.logger.debug(f'Entering trading loop at time {time}')
 
         for asset_id in self.asset_ids:
             opt: Optimizer = self.optimizers[asset_id]
@@ -84,52 +87,68 @@ class Simulator:
                                                        current_mualgo_position=self.current_mualgo_position,
                                                        slippage=0)
 
-            # Pretend we always get the fill with zero slippage,
-            trade_record = TradeRecord(
-                asset_buy_id=opt_swap_quote.amount_out.asset.id,
-                asset_sell_id=opt_swap_quote.amount_in.asset.id,
-                asset_buy_amount=opt_swap_quote.amount_out.amount,
-                asset_sell_amount=opt_swap_quote.amount_in.amount
-            )
+            if opt_swap_quote is not None:
 
-            self.log_trade(trade_record)
+                # Pretend we always get the fill with zero slippage,
+                trade_record = TradeRecord(
+                    time=time,
+                    asset_buy_id=opt_swap_quote.amount_out.asset.id,
+                    asset_sell_id=opt_swap_quote.amount_in.asset.id,
+                    asset_buy_amount=opt_swap_quote.amount_out.amount,
+                    asset_sell_amount=opt_swap_quote.amount_in.amount
+                )
+
+                self.log_trade(trade_record)
+
+    def update_state(self, time, price_update):
+        for asset_id in self.asset_ids:
+            self.prices[asset_id] = price_update
+            asa_price_mualgo = price_update.asset2_reserves / price_update.asset1_reserves
+            self.signal_providers[asset_id].update(time, asa_price_mualgo)
 
     def run(self, end_time: datetime.datetime):
-        current_time = self.initial_time
 
-        gen = only_price(
-            filter_last_prices(
-                self.price_volume_stream.scrape()
-            )
-        )
+        # Takes values on the times where we run the trading loop
+        current_time: Optional[datetime.datetime] = None
 
-        for x in gen:
+        initial_time: Optional[datetime.datetime] = None
+
+        for x in self.price_stream:
 
             self.logger.debug(f'x = {x}')
 
             assert x.asset_ids[1] == 0
             asset_id, price_update = x.asset_ids[0], x.price_update
 
-            time = datetime.datetime.utcfromtimestamp(x.price_update.time)
+            # Time of the price update
+            time = int_to_tzaware_utc_datetime(x.price_update.time)
+
+            if initial_time is None:
+                initial_time = time
+                current_time = time
+
             assert time >= current_time
 
             while time - current_time > self.simulation_step:
                 current_time = current_time + self.simulation_step
-                self.trade_loop(current_time)
+                # Trade only if we are not seeding
+                if time - initial_time > self.seed_time:
+                    self.logger.debug(f'Entering trading loop at sim time {current_time}')
+                    self.trade_loop(current_time)
+                else:
+                    self.logger.debug(f'Still seeding at sim time {current_time}')
 
-            for asset_id in self.asset_ids:
-                self.prices[asset_id] = price_update
-                asa_price_mualgo = price_update.asset2_reserves / price_update.asset1_reserves
-                self.signal_providers[asset_id].update(time, asa_price_mualgo)
-
-            if current_time > end_time:
+            # End the simulation
+            if time > end_time:
                 break
+
+            self.update_state(time, price_update)
 
 
 class TestSimulator(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
         super().__init__(*args, **kwargs)
@@ -144,25 +163,24 @@ class TestSimulator(unittest.TestCase):
 
         universe = SimpleUniverse.from_cache(universe_cache_name)
 
-        def filter_pair(a1, a2):
-            return tuple(sorted([a1, a2])) in [tuple(sorted([x.asset1_id, x.asset2_id])) for x in universe.pools]
-
+        filter_pair = make_filter_from_universe(universe)
         dfp = load_algo_pools(price_cache_name, 'prices', filter_pair)
 
         # Just choose some starting positions
         initial_positions = dfp.groupby('asset1')['asset1_reserves'].mean() // 1000
-        print(initial_positions)
 
-        initial_time = datetime.datetime(year=2021, month=11, day=1, tzinfo=timezone.utc)
-        end_time = datetime.datetime(year=2021, month=11, day=3, tzinfo=timezone.utc)
+        seed_time = datetime.timedelta(days=1)
 
-        initial_date = initial_time.date()
+        initial_time = datetime.datetime(year=2021, month=11, day=10, tzinfo=timezone.utc)
+        price_stream = stream_from_price_df(dfp, initial_time)
+
+        end_time = datetime.datetime(year=2021, month=11, day=20, tzinfo=timezone.utc)
 
         asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
 
         pos_impact_states = {
-            asset_id: PositionAndImpactState(ASAImpactState(impact_timescale_seconds, initial_time),
+            asset_id: PositionAndImpactState(ASAImpactState(impact_timescale_seconds),
                                              initial_positions.loc[asset_id])
             for asset_id in asset_ids
         }
@@ -180,8 +198,9 @@ class TestSimulator(unittest.TestCase):
                               simulation_step_seconds=simulation_step_seconds,
                               initial_mualgo_position=initial_mualgo_position,
                               risk_coef=risk_coef,
-                              start_date=initial_date,
-                              log_trade=log_trade
+                              log_trade=log_trade,
+                              seed_time=seed_time,
+                              price_stream=price_stream
                               )
 
         simulator.run(end_time)

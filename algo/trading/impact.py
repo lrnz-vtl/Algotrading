@@ -27,16 +27,19 @@ def avg_impact_deflection_bps(asset_pool_percentage: float) -> float:
 
 
 class ASAImpactState:
-    def __init__(self, decay_timescale_seconds: int, t: datetime.datetime):
+    def __init__(self, decay_timescale_seconds: int):
         self.state = 0
-        self.t = t
+        # This does not really matter if s
+        self.t = np.nan
         self.decay_timescale_seconds = decay_timescale_seconds
 
     def update(self, swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
 
-        delta = t - self.t
-
-        state = self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
+        if not np.isnan(self.t):
+            delta = t - self.t
+            state = self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
+        else:
+            state = 0
 
         if swap.asset_buy == 0:
             assert 0 <= swap.amount_buy <= mualgo_reserves
@@ -53,6 +56,8 @@ class ASAImpactState:
         self.state = state
 
     def value(self, t: datetime.datetime):
+        if np.isnan(self.t):
+            return 0
         delta = t - self.t
         return self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
 

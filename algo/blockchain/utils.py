@@ -21,6 +21,10 @@ def int_to_rfc3339(t: int):
     return datetime.datetime.fromtimestamp(t).isoformat() + 'Z'
 
 
+def int_to_tzaware_utc_datetime(t: int):
+    return datetime.datetime.utcfromtimestamp(t).replace(tzinfo=datetime.timezone.utc)
+
+
 def generator_to_df(gen, time_columns=('time',)):
     df = pd.DataFrame(gen)
     if df.empty:
@@ -61,6 +65,12 @@ def algo_nousd_filter(a1, a2):
             or (a1 != 0 and a2 != 0):
         return False
     return True
+
+
+def make_filter_from_universe(universe: SimpleUniverse):
+    def filter_pair(a1, a2):
+        return tuple(sorted([a1, a2])) in [tuple(sorted([x.asset1_id, x.asset2_id])) for x in universe.pools]
+    return filter_pair
 
 
 def load_algo_pools(cache_name: str, data_type: str, filter_pair: Optional[Callable]):

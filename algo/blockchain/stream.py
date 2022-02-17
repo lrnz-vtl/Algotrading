@@ -8,6 +8,9 @@ import pandas as pd
 import requests
 from dataclasses import dataclass
 import datetime
+from datetime import timezone
+import numpy as np
+from algo.blockchain.utils import int_to_tzaware_utc_datetime
 
 
 def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: int):
@@ -75,6 +78,30 @@ class PriceOrVolumeUpdate:
 class PriceUpdate:
     asset_ids: tuple[int, int]
     price_update: PoolState
+
+
+def stream_from_price_df(df: pd.DataFrame, start_time: datetime.datetime) -> Generator[PriceUpdate,Any,Any]:
+    assert np.all(df.columns == ['time', 'asset1_reserves', 'asset2_reserves', 'asset1', 'asset2'])
+    df = df.sort_values(by='time')
+
+    assert start_time.tzinfo == timezone.utc
+
+    def row_to_update(row):
+        return PriceUpdate(
+            asset_ids=(row['asset1'], row['asset2']),
+            price_update=PoolState(
+                time=row['time'],
+                asset1_reserves=row['asset1_reserves'],
+                asset2_reserves=row['asset2_reserves'],
+                reverse_order_in_block=None
+            )
+        )
+
+    for _, row in df.iterrows():
+        time = int_to_tzaware_utc_datetime(row['time'])
+
+        if time >= start_time:
+            yield row_to_update(row)
 
 
 def only_price(gen: Generator[PriceOrVolumeUpdate, Any, Any]) -> Generator[PriceUpdate, Any, Any]:
