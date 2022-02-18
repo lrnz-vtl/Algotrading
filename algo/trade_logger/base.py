@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from tinyman.v1.pools import SwapQuote
-from tools.timestamp import Timestamp
+from algo.tools.timestamp import Timestamp
 
 
 @dataclass

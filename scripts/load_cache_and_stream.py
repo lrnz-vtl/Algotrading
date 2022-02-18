@@ -8,7 +8,6 @@ from algo.strategy.analytics import process_market_df
 import argparse
 import time
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -25,23 +24,23 @@ if __name__ == '__main__':
     dfv = load_algo_pools(volume_cache, 'volumes')
 
     # define the query parameters for the stream from the last timestamp in cache data
-    time_start = max(dfv.time.max(),dfp.time.max())
-    qp = QueryParams(after_time = int_to_datetime(time_start))
+    time_start = max(dfv.time.max(), dfp.time.max())
+    qp = QueryParams(after_time=int_to_datetime(time_start))
 
     # get the universe and set up the stream
     universe = SimpleUniverse.from_cache(args.universe)
-    pvs=PriceVolumeStream(DataStream(universe,qp))
-    pvds=PriceVolumeDataStore(pvs)
-    
+    pvs = PriceVolumeStream(DataStream(universe, qp))
+    pvds = PriceVolumeDataStore(pvs)
+
     print(f'Scraping data from {int_to_datetime(time_start)} onwards.')
     dfp, dfv = pvds.update(dfp, dfv)
 
     for i in range(5):
         time.sleep(5)
-        ti=time.time()
-        dfp, dfv = pvds.update(dfp,dfv)
-        print(f'Scraping 5 seconds of data in {time.time()-ti} seconds.')
-    
+        ti = time.time()
+        dfp, dfv = pvds.update(dfp, dfv)
+        print(f'Scraping 5 seconds of data in {time.time() - ti} seconds.')
+
     df = process_market_df(dfp, dfv)
 
     print(df)

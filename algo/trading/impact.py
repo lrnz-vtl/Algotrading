@@ -2,6 +2,7 @@ import datetime
 from dataclasses import dataclass
 import numpy as np
 from algo.trading.swapper import AlgoPoolSwap
+import pandas as pd
 
 # Leading order Taylor expansions of the functions below
 impact_deflection_bps_perfraction = 2.0
@@ -30,12 +31,12 @@ class ASAImpactState:
     def __init__(self, decay_timescale_seconds: int):
         self.state = 0
         # This does not really matter if s
-        self.t = np.nan
+        self.t = np.datetime64('NaT')
         self.decay_timescale_seconds = decay_timescale_seconds
 
     def update(self, swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
 
-        if not np.isnan(self.t):
+        if not pd.isnull(self.t):
             delta = t - self.t
             state = self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
         else:
@@ -56,7 +57,7 @@ class ASAImpactState:
         self.state = state
 
     def value(self, t: datetime.datetime):
-        if np.isnan(self.t):
+        if pd.isnull(self.t):
             return 0
         delta = t - self.t
         return self.state * np.exp(- delta.total_seconds() / self.decay_timescale_seconds)
@@ -75,3 +76,21 @@ class PositionAndImpactState:
             assert self.asa_position >= 0
         else:
             self.asa_position += traded_swap.amount_buy
+
+
+@dataclass
+class GlobalPositionAndImpactState:
+    asa_states: dict[int, PositionAndImpactState]
+    mualgo_position: int
+
+    def update(self, asa_id:int, traded_swap: AlgoPoolSwap,
+               mualgo_reserves: int,
+               asa_reserves: int,
+               t: datetime.datetime):
+
+        if traded_swap.asset_buy == 0:
+            self.mualgo_position += traded_swap.amount_buy
+        elif traded_swap.asset_buy > 0:
+            self.mualgo_position -= traded_swap.amount_sell
+
+        self.asa_states[asa_id].update(traded_swap, mualgo_reserves, asa_reserves, t)
