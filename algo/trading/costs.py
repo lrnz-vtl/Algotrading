@@ -1,4 +1,5 @@
-from algo.trading.impact import ASAImpactState
+from __future__ import annotations
+import math
 from dataclasses import dataclass
 
 # TODO Check me
@@ -9,6 +10,8 @@ FEE_BPS = (1000 / 997 - 1.0)
 
 # TODO Measure me
 EXPECTED_SLIPPAGE_BPS = 0.0
+
+REL_TOL = 10 ** -7
 
 
 def reserves_to_avg_impact_cost_coef(reserves: int):
@@ -32,6 +35,16 @@ class TradeCostsMualgo:
     linear_impact_cost_mualgo: float
     fees_mualgo: float
     fixed_fees_mualgo: float
+
+    @staticmethod
+    def zero() -> TradeCostsMualgo:
+        return TradeCostsMualgo(0, 0, 0, 0)
+
+    def approx_eq_to(self, other: TradeCostsMualgo) -> bool:
+        return math.isclose(self.quadratic_impact_cost_mualgo, other.quadratic_impact_cost_mualgo, rel_tol=REL_TOL) \
+               and math.isclose(self.linear_impact_cost_mualgo, other.linear_impact_cost_mualgo, rel_tol=REL_TOL) \
+               and math.isclose(self.fees_mualgo, other.fees_mualgo, rel_tol=REL_TOL) \
+               and math.isclose(self.fixed_fees_mualgo, other.fixed_fees_mualgo, rel_tol=REL_TOL)
 
 
 class TradeCostsOther:
@@ -73,9 +86,9 @@ class TradeCostsOther:
 
     def to_mualgo_basis(self) -> TradeCostsMualgo:
         if self._buy_asset == 0:
-            price = 1.0
+            price = 1 / self._buy_asset_price_other
         else:
-            price = self._buy_asset_price_other
+            price = 1.0
 
         return TradeCostsMualgo(
             quadratic_impact_cost_mualgo=self.quadratic_impact_cost_other * price,

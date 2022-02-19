@@ -16,19 +16,24 @@ warnings.simplefilter("error", RuntimeWarning)
 logger = logging.getLogger(__name__)
 
 
+# The quadratic impact approximation is not accurate beyond this point
+RESERVE_PERCENTAGE_CAP = 0.1
+
+# Only allowed to go 10% above the previous cap after optimisation
+RESERVE_PERCENTAGE_CAP_TOLERANCE = 0.1
+
+
 @dataclass
 class OptimizedBuy:
     # Optimized amount which maximizes profit
     amount: int
     # The min amount at which trade would be profitable (it's not zero because of the fixed fee)
     min_profitable_amount: int
-    # The max slippage at which the trade at the optimised amount would be profitable
-    max_profitable_slippage_bps: float
 
     def __post_init__(self):
         assert self.amount > 0
         assert self.min_profitable_amount > 0
-        assert self.max_profitable_slippage_bps > 0
+        assert self.amount >= self.min_profitable_amount
 
 
 class AssetType(Enum):
@@ -69,9 +74,16 @@ def optimal_amount_buy_asset(signal_bps: float,
     quad = quadratic_risk_penalty + asset_price * avg_impact_cost_coef
     const = fixed_fee_other
 
+    avg_impact_cost_coef_dbg = (asset_price * avg_impact_cost_coef) / (asset_price)
+    quadratic_risk_penalty_dbg = quadratic_risk_penalty / (asset_price)
+    quad_dbg = quad / (asset_price)
+
     # <Profit> = lin * Amount - quad * Amount^2 - const
 
     amount_profit_argmax = int(lin / (2 * quad))
+
+    const_dbg = const / asset_price
+    amount_dbg = amount_profit_argmax
 
     max_profit_other = lin ** 2 / (4 * quad) - const
     if max_profit_other <= 0:
@@ -81,10 +93,12 @@ def optimal_amount_buy_asset(signal_bps: float,
     assert min_profitable_amount > 0
     min_profitable_amount = math.ceil(min_profitable_amount)
 
-    max_additional_slippage = f_bps - 2 * fixed_fee_other / (amount_profit_argmax * asset_price)
+    capped_amount = int(min(RESERVE_PERCENTAGE_CAP*current_asset_reserves, amount_profit_argmax))
+    if capped_amount < min_profitable_amount:
+        return None
+
     return OptimizedBuy(
-        amount=amount_profit_argmax,
-        max_profitable_slippage_bps=max_additional_slippage,
+        amount=capped_amount,
         min_profitable_amount=min_profitable_amount
     )
 
@@ -149,23 +163,25 @@ class Optimizer:
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
+        # FIXME This is probably wrong
         quadratic_risk_penalty = self.risk_coef * asa_price_mualgo ** 2
-        linear_risk_penalty = 2.0 * self.risk_coef * current_asa_position * asa_price_mualgo ** 2
+        linear_risk_penalty = 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo ** 2
 
-        optimized_asa_buy = optimal_amount_buy_asset(signal_bps=signal_bps,
-                                                     impact_bps=impact_bps,
-                                                     current_asset_reserves=current_asa_reserves,
-                                                     current_other_asset_reserves=current_mualgo_reserves,
-                                                     quadratic_risk_penalty=quadratic_risk_penalty,
-                                                     linear_risk_penalty=linear_risk_penalty,
-                                                     # Upper bound pessimistic estimate for the fixed cost: if we buy now we have to exit later, so pay it twice
-                                                     fixed_fee_other=FIXED_FEE_MUALGOS * 2
-                                                     )
+        optimized_asa_buy = None
+        # optimized_asa_buy = optimal_amount_buy_asset(signal_bps=signal_bps,
+        #                                              impact_bps=impact_bps,
+        #                                              current_asset_reserves=current_asa_reserves,
+        #                                              current_other_asset_reserves=current_mualgo_reserves,
+        #                                              quadratic_risk_penalty=quadratic_risk_penalty,
+        #                                              linear_risk_penalty=linear_risk_penalty,
+        #                                              # Upper bound pessimistic estimate for the fixed cost: if we buy now we have to exit later, so pay it twice
+        #                                              fixed_fee_other=FIXED_FEE_MUALGOS * 2
+        #                                              )
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
-        quadratic_risk_penalty = self.risk_coef
-        linear_risk_penalty = - 2.0 * self.risk_coef * current_asa_position * asa_price_mualgo
+        quadratic_risk_penalty = self.risk_coef / asa_price_mualgo
+        linear_risk_penalty = - 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo
 
         optimized_algo_buy = optimal_amount_buy_asset(signal_bps=1 / (1 + signal_bps) - 1.0,
                                                       impact_bps=1 / (1 + impact_bps) - 1.0,
@@ -234,12 +250,12 @@ class Optimizer:
             minimal_asset_out_amount = optimal_swap.optimised_buy.min_profitable_amount
             minimal_asset_in_amount = asset_in_from_asset_out(minimal_asset_out_amount)
 
-            if sell_amount_available <= minimal_asset_in_amount:
+            if sell_amount_available.value <= minimal_asset_in_amount:
                 return None
 
-            asset_in_amount = min(optimal_asset_in_amount, sell_amount_available)
+            asset_in_amount = min(optimal_asset_in_amount, sell_amount_available.value)
 
-            assert asset_in_amount <= sell_amount_available
+            assert asset_in_amount <= sell_amount_available.value
 
             if asset_in_amount > 0:
                 quote = fetch_fixed_input_swap_quote(Asset(self.asset1), Asset(0),
@@ -248,7 +264,8 @@ class Optimizer:
 
                 # Beyond this the quadratic approximation for the impact cost breaks down
                 # (more than 1% error in the calculation)
-                assert quote.amount_out.amount < 0.1 * output_supply
+                assert quote.amount_out.amount < 0.1 * output_supply, \
+                    f"amount_out={quote.amount_out.amount} >= {0.1*output_supply} = 0.1*output_supply"
                 return quote
 
         return None

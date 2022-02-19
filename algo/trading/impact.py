@@ -64,18 +64,26 @@ class ASAImpactState:
 
 
 @dataclass
+class ASAPosition:
+    value: int
+
+    def update(self, traded_swap: AlgoPoolSwap):
+        if traded_swap.asset_buy == 0:
+            self.value -= traded_swap.amount_sell
+            # We can't short
+            assert self.value >= 0
+        else:
+            self.value += traded_swap.amount_buy
+
+
+@dataclass
 class PositionAndImpactState:
     impact: ASAImpactState
-    asa_position: int
+    asa_position: ASAPosition
 
     def update(self, traded_swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
         self.impact.update(traded_swap, mualgo_reserves, asa_reserves, t)
-        if traded_swap.asset_buy == 0:
-            self.asa_position -= traded_swap.amount_sell
-            # We can't short
-            assert self.asa_position >= 0
-        else:
-            self.asa_position += traded_swap.amount_buy
+        self.asa_position.update(traded_swap)
 
 
 @dataclass

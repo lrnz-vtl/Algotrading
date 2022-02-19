@@ -18,27 +18,26 @@ class AlgoPoolSwap:
     amount_sell: int
 
 
-@dataclass
-class TradeRecord:
-    pass
-
-
 class Swapper(ABC):
     @abstractmethod
-    def attempt_transaction(self, quote: SwapQuote) -> Optional[TradeRecord]:
+    def attempt_transaction(self, quote: SwapQuote) -> Optional[AlgoPoolSwap]:
         pass
 
 
 # Fake swapper for the simulation environment
 class SimulationSwapper(Swapper):
 
-    def __init__(self, asset1: int, asset2: int, price_provider: Callable[[], tuple[int, int]]):
-        self.price_provider = price_provider
-        self.asset1 = asset1
-        self.asset2 = asset2
+    # def __init__(self, asset1: int, asset2: int, price_provider: Callable[[], tuple[int, int]]):
+    #     self.price_provider = price_provider
+    #     self.asset1 = asset1
+    #     self.asset2 = asset2
 
-    def attempt_transaction(self, quote: SwapQuote) -> Optional[TradeRecord]:
-        raise NotImplementedError
+    def attempt_transaction(self, quote: SwapQuote) -> Optional[AlgoPoolSwap]:
+        return AlgoPoolSwap(
+            asset_buy=quote.amount_out.asset.id,
+            amount_buy=quote.amount_out.amount,
+            amount_sell=quote.amount_in.amount
+        )
 
 
 # What we have in real trading environment
@@ -58,5 +57,5 @@ class ProductionSwapper(Swapper):
 
         self.logger = logging.getLogger(f'{__name__} {self.asset1_id}')
 
-    def attempt_transaction(self, quote: SwapQuote) -> Optional[TradeRecord]:
+    def attempt_transaction(self, quote: SwapQuote) -> Optional[AlgoPoolSwap]:
         raise NotImplementedError
