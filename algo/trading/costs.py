@@ -11,7 +11,7 @@ FEE_BPS = (1000 / 997 - 1.0)
 # TODO Measure me
 EXPECTED_SLIPPAGE_BPS = 0.0
 
-REL_TOL = 10 ** -7
+REL_TOL = 10 ** -4
 
 
 def reserves_to_avg_impact_cost_coef(reserves: int):

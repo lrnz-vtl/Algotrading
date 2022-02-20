@@ -52,7 +52,13 @@ class TradeInfo:
     costs: TradeCostsMualgo
     asa_price: float
 
+    def assert_price_covariant(self, right: TradeInfo):
+        assert self.trade.to_price_invariant(asa_price=self.asa_price).approx_eq_to(right.trade.to_price_invariant(asa_price=right.asa_price))
+        assert self.costs.approx_eq_to(right.costs)
+
     def price_covariant(self, right: TradeInfo) -> bool:
-        return self.costs.approx_eq_to(right.costs) \
-               and self.trade.to_price_invariant(asa_price=self.asa_price).approx_eq_to(
-            right.trade.to_price_invariant(asa_price=right.asa_price))
+        try:
+            self.assert_price_covariant(right)
+        except AssertionError:
+            return False
+        return True

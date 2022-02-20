@@ -15,7 +15,6 @@ warnings.simplefilter("error", RuntimeWarning)
 
 logger = logging.getLogger(__name__)
 
-
 # The quadratic impact approximation is not accurate beyond this point
 RESERVE_PERCENTAGE_CAP = 0.1
 
@@ -54,7 +53,7 @@ def optimal_amount_buy_asset(signal_bps: float,
                              quadratic_risk_penalty: float,
                              linear_risk_penalty: float,
                              fixed_fee_other: float) -> Optional[OptimizedBuy]:
-    # Do not let impact trade us more
+    # Do not let impact make us trade more
     if impact_bps < 0:
         impact_bps = 0
 
@@ -74,16 +73,23 @@ def optimal_amount_buy_asset(signal_bps: float,
     quad = quadratic_risk_penalty + asset_price * avg_impact_cost_coef
     const = fixed_fee_other
 
-    avg_impact_cost_coef_dbg = (asset_price * avg_impact_cost_coef) / (asset_price)
-    quadratic_risk_penalty_dbg = quadratic_risk_penalty / (asset_price)
-    quad_dbg = quad / (asset_price)
+    # Debug variables for ASA sell branch
+    # avg_impact_cost_coef_dbg = (asset_price * avg_impact_cost_coef) / asset_price
+    # quadratic_risk_penalty_dbg = quadratic_risk_penalty / asset_price
+    # quad_dbg = quad / asset_price
+
+    # Debug variables for ASA buy branch
+    # avg_impact_cost_coef_dbg2 = avg_impact_cost_coef / asset_price
+    # quad_dbg2 = quad / (asset_price ** 2)
 
     # <Profit> = lin * Amount - quad * Amount^2 - const
 
     amount_profit_argmax = int(lin / (2 * quad))
 
-    const_dbg = const / asset_price
-    amount_dbg = amount_profit_argmax
+    # const_dbg = const / asset_price
+    # amount_dbg = amount_profit_argmax
+    # lin_dbg2 = lin / asset_price
+    # amount_dbg2 = amount_profit_argmax * asset_price
 
     max_profit_other = lin ** 2 / (4 * quad) - const
     if max_profit_other <= 0:
@@ -93,7 +99,7 @@ def optimal_amount_buy_asset(signal_bps: float,
     assert min_profitable_amount > 0
     min_profitable_amount = math.ceil(min_profitable_amount)
 
-    capped_amount = int(min(RESERVE_PERCENTAGE_CAP*current_asset_reserves, amount_profit_argmax))
+    capped_amount = int(min(RESERVE_PERCENTAGE_CAP * current_asset_reserves, amount_profit_argmax))
     if capped_amount < min_profitable_amount:
         return None
 
@@ -167,16 +173,15 @@ class Optimizer:
         quadratic_risk_penalty = self.risk_coef * asa_price_mualgo ** 2
         linear_risk_penalty = 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo ** 2
 
-        optimized_asa_buy = None
-        # optimized_asa_buy = optimal_amount_buy_asset(signal_bps=signal_bps,
-        #                                              impact_bps=impact_bps,
-        #                                              current_asset_reserves=current_asa_reserves,
-        #                                              current_other_asset_reserves=current_mualgo_reserves,
-        #                                              quadratic_risk_penalty=quadratic_risk_penalty,
-        #                                              linear_risk_penalty=linear_risk_penalty,
-        #                                              # Upper bound pessimistic estimate for the fixed cost: if we buy now we have to exit later, so pay it twice
-        #                                              fixed_fee_other=FIXED_FEE_MUALGOS * 2
-        #                                              )
+        optimized_asa_buy = optimal_amount_buy_asset(signal_bps=signal_bps,
+                                                     impact_bps=impact_bps,
+                                                     current_asset_reserves=current_asa_reserves,
+                                                     current_other_asset_reserves=current_mualgo_reserves,
+                                                     quadratic_risk_penalty=quadratic_risk_penalty,
+                                                     linear_risk_penalty=linear_risk_penalty,
+                                                     # Upper bound pessimistic estimate for the fixed cost: if we buy now we have to exit later, so pay it twice
+                                                     fixed_fee_other=FIXED_FEE_MUALGOS * 2
+                                                     )
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
@@ -221,7 +226,7 @@ class Optimizer:
                 asset_in = Asset(self.asset1)
                 input_supply = current_asa_reserves
                 output_supply = current_mualgo_reserves
-                sell_amount_available = pos_and_impact_state.asa_position
+                sell_amount_available = pos_and_impact_state.asa_position.value
 
             else:
                 # What we sell
@@ -250,12 +255,12 @@ class Optimizer:
             minimal_asset_out_amount = optimal_swap.optimised_buy.min_profitable_amount
             minimal_asset_in_amount = asset_in_from_asset_out(minimal_asset_out_amount)
 
-            if sell_amount_available.value <= minimal_asset_in_amount:
+            if sell_amount_available <= minimal_asset_in_amount:
                 return None
 
-            asset_in_amount = min(optimal_asset_in_amount, sell_amount_available.value)
+            asset_in_amount = min(optimal_asset_in_amount, sell_amount_available)
 
-            assert asset_in_amount <= sell_amount_available.value
+            assert asset_in_amount <= sell_amount_available
 
             if asset_in_amount > 0:
                 quote = fetch_fixed_input_swap_quote(Asset(self.asset1), Asset(0),
@@ -264,8 +269,9 @@ class Optimizer:
 
                 # Beyond this the quadratic approximation for the impact cost breaks down
                 # (more than 1% error in the calculation)
-                assert quote.amount_out.amount < 0.1 * output_supply, \
-                    f"amount_out={quote.amount_out.amount} >= {0.1*output_supply} = 0.1*output_supply"
+                cap = RESERVE_PERCENTAGE_CAP * (1 + RESERVE_PERCENTAGE_CAP_TOLERANCE)
+                assert quote.amount_out.amount < cap * output_supply, \
+                    f"amount_out={quote.amount_out.amount} >= {cap * output_supply} = cap*output_supply"
                 return quote
 
         return None

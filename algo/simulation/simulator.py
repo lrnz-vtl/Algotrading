@@ -24,7 +24,7 @@ class StateLog:
 def validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves, pos_impact_state, asset_id, time):
     if opt_swap_quote.amount_out.asset.id == 0:
         out_reserves = current_mualgo_reserves
-        sell_position = pos_impact_state.asa_states[asset_id].asa_position
+        sell_position = pos_impact_state.asa_states[asset_id].asa_position.value
     elif opt_swap_quote.amount_out.asset.id > 0:
         assert opt_swap_quote.amount_out.asset.id == asset_id
         out_reserves = current_asa_reserves
@@ -36,7 +36,7 @@ def validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reser
         f"Buy amount:{opt_swap_quote.amount_out.amount} > pool reserve {out_reserves}: " \
         f"for asset {opt_swap_quote.amount_out.asset.id} in pool {asset_id} at time {time}"
 
-    assert opt_swap_quote.amount_in.amount <= sell_position.value
+    assert opt_swap_quote.amount_in.amount <= sell_position
 
 
 class Simulator:
