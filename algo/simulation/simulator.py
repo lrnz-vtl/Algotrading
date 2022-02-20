@@ -77,12 +77,14 @@ class Simulator:
         for asset_id in self.asset_ids:
 
             self.logger.debug(f'Entering trade logic for asset {asset_id}')
-            opt: Optimizer = self.optimizers[asset_id]
-            signal_bps = self.signal_providers[asset_id].value(time)
 
             if asset_id not in self.prices:
                 self.logger.warning(f'Price for asset {asset_id} at time {time} not in data, skipping the trade logic.')
                 continue
+
+            opt: Optimizer = self.optimizers[asset_id]
+
+            signal_bps = self.signal_providers[asset_id].value
 
             current_asa_reserves = self.prices[asset_id].asset1_reserves
             current_mualgo_reserves = self.prices[asset_id].asset2_reserves

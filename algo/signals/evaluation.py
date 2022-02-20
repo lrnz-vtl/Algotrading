@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 import numpy as np
 from matplotlib import pyplot as plt
-from algo.blockchain.utils import load_algo_pools
+from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
 from algo.strategy.analytics import process_market_df, make_weights
 from typing import Optional
 from sklearn.linear_model import LinearRegression
@@ -11,6 +11,7 @@ from sklearn.metrics import r2_score
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 from algo.universe.universe import SimpleUniverse
+from sklearn.decomposition import PCA
 
 
 def any_axis_1(x):
@@ -31,8 +32,10 @@ class AnalysisDataStore:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
 
-        dfp = load_algo_pools(price_cache, 'prices')
-        dfv = load_algo_pools(volume_cache, 'volumes')
+        filter = make_filter_from_universe(universe)
+
+        dfp = load_algo_pools(price_cache, 'prices', filter)
+        dfv = load_algo_pools(volume_cache, 'volumes', filter)
 
         df = process_market_df(dfp, dfv)
         df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
@@ -125,6 +128,9 @@ class AnalysisDataStore:
 
         X_train, y_train, w_train = X[train_idx], y[train_idx], w[train_idx]
         X_test, y_test, w_test = X[test_idx], y[test_idx], w[test_idx]
+
+        pca = PCA().fit(X_train)
+        self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
 
         train_times = X_train.index.get_level_values(TIME_INDEX_NAME)
         test_times = X_test.index.get_level_values(TIME_INDEX_NAME)

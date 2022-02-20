@@ -169,40 +169,42 @@ class Optimizer:
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
-        # FIXME This is probably wrong
-        quadratic_risk_penalty = self.risk_coef * asa_price_mualgo ** 2
-        linear_risk_penalty = 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo ** 2
+        quadratic_risk_penalty_asa_buy = self.risk_coef * asa_price_mualgo ** 2
+        linear_risk_penalty_asa_buy = 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo ** 2
 
         optimized_asa_buy = optimal_amount_buy_asset(signal_bps=signal_bps,
                                                      impact_bps=impact_bps,
                                                      current_asset_reserves=current_asa_reserves,
                                                      current_other_asset_reserves=current_mualgo_reserves,
-                                                     quadratic_risk_penalty=quadratic_risk_penalty,
-                                                     linear_risk_penalty=linear_risk_penalty,
+                                                     quadratic_risk_penalty=quadratic_risk_penalty_asa_buy,
+                                                     linear_risk_penalty=linear_risk_penalty_asa_buy,
                                                      # Upper bound pessimistic estimate for the fixed cost: if we buy now we have to exit later, so pay it twice
                                                      fixed_fee_other=FIXED_FEE_MUALGOS * 2
                                                      )
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
-        quadratic_risk_penalty = self.risk_coef / asa_price_mualgo
-        linear_risk_penalty = - 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo
+        quadratic_risk_penalty_algo_buy = self.risk_coef / asa_price_mualgo
+        linear_risk_penalty_algo_buy = - 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo
 
         optimized_algo_buy = optimal_amount_buy_asset(signal_bps=1 / (1 + signal_bps) - 1.0,
                                                       impact_bps=1 / (1 + impact_bps) - 1.0,
                                                       current_asset_reserves=current_mualgo_reserves,
                                                       current_other_asset_reserves=current_asa_reserves,
-                                                      quadratic_risk_penalty=quadratic_risk_penalty,
-                                                      linear_risk_penalty=linear_risk_penalty,
+                                                      quadratic_risk_penalty=quadratic_risk_penalty_algo_buy,
+                                                      linear_risk_penalty=linear_risk_penalty_algo_buy,
                                                       fixed_fee_other=FIXED_FEE_MUALGOS / asa_price_mualgo
                                                       )
 
-        assert optimized_asa_buy is None or optimized_algo_buy is None
+        if not (optimized_asa_buy is None or optimized_algo_buy is None):
+            self.logger.error(f"Both buy and sell at time {t}")
+        # FIXME
+        # assert optimized_asa_buy is None or optimized_algo_buy is None, f"{optimized_asa_buy}, {optimized_algo_buy}"
 
-        if optimized_asa_buy is not None:
-            return OptimalSwap(AssetType.OTHER, optimized_asa_buy)
-        elif optimized_algo_buy is not None:
+        if optimized_algo_buy is not None:
             return OptimalSwap(AssetType.ALGO, optimized_algo_buy)
+        elif optimized_asa_buy is not None:
+            return OptimalSwap(AssetType.OTHER, optimized_asa_buy)
         else:
             return None
 

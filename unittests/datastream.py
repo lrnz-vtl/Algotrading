@@ -6,7 +6,6 @@ from tinyman.v1.client import TinymanMainnetClient
 import asyncio
 import uuid
 from contextlib import closing
-import os
 import shutil
 
 

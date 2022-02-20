@@ -46,3 +46,5 @@ class TestAnalysisDs(unittest.TestCase):
         features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
         model = LinearRegression()
         self.ds.eval_model(model, features, self.response, filter_nans=True)
+
+        print(f'betas = {model.coef_}')

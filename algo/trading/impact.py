@@ -14,7 +14,7 @@ def impact_deflection_bps(asset_pool_percentage: float) -> float:
     asset_pool_percentage: percentage of the token we take out relative to pool assets
     returns -> instantaneous percentage change of price of the token we buy in units of the token we sell
     """
-    assert 0 <= asset_pool_percentage <= 1
+    assert 0 <= asset_pool_percentage <= 1, f"asset_pool_percentage = {asset_pool_percentage}"
     return 1.0 / (1.0 - asset_pool_percentage) ** 2 - 1.0
 
 
@@ -48,7 +48,7 @@ class ASAImpactState:
             state += 1 / (1 + algo_price_deflection) - 1.0
         elif swap.asset_buy > 0:
             assert 0 <= swap.amount_buy <= asa_reserves
-            asa_price_deflection = impact_deflection_bps(swap.amount_buy / mualgo_reserves)
+            asa_price_deflection = impact_deflection_bps(swap.amount_buy / asa_reserves)
             state += asa_price_deflection
         else:
             raise ValueError
