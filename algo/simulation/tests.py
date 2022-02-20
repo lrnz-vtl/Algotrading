@@ -2,21 +2,16 @@ from __future__ import annotations
 import datetime
 import unittest
 import logging
-from algo.trading.impact import ASAImpactState, AlgoPoolSwap, PositionAndImpactState, GlobalPositionAndImpactState, \
+from algo.trading.impact import ASAImpactState, PositionAndImpactState, GlobalPositionAndImpactState, \
     ASAPosition
-from algo.trading.optimizer import Optimizer
-from algo.trading.costs import TradeCostsOther, TradeCostsMualgo
-from matplotlib import pyplot as plt
-import numpy as np
-from algo.trading.signalprovider import PriceSignalProvider, DummySignalProvider
+from algo.trading.signalprovider import DummySignalProvider
 from algo.blockchain.stream import PoolState, PriceUpdate, stream_from_price_df
 from algo.universe.universe import SimpleUniverse
-from typing import Callable, Generator, Any, Optional
 from dataclasses import dataclass
 from datetime import timezone
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe, int_to_tzaware_utc_datetime
-from algo.trading.simulator import Simulator
-from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, PoolIdStore, load_pool_info
+from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
+from algo.simulation.simulator import Simulator
+from algo.universe.pools import PoolId
 from algo.blockchain.utils import datetime_to_int
 from algo.trading.trades import TradeInfo
 
@@ -81,7 +76,10 @@ def debug_trades(params: SimDebugParameter):
     def log_trade(x):
         logged_trades.append(x)
 
-    simulator.run(end_time, log_trade)
+    def log_state(x):
+        pass
+
+    simulator.run(end_time, log_trade, log_state)
 
     return logged_trades
 
@@ -99,7 +97,7 @@ class TestSimulator(unittest.TestCase):
 
         initial_position_multiplier = 1 / 100
 
-        risk_coef = 0.000001
+        risk_coef = 0.0000001
         # risk_coef = 0.000000001
         price_cache_name = '20220209_prehack'
         universe_cache_name = 'liquid_algo_pools_nousd_prehack'
@@ -146,7 +144,10 @@ class TestSimulator(unittest.TestCase):
         def log_trade(x):
             self.logger.info(x)
 
-        simulator.run(end_time, log_trade)
+        def log_state(x):
+            pass
+
+        simulator.run(end_time, log_trade, log_state)
 
     def test_price_invariance(self):
 

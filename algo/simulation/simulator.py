@@ -11,6 +11,14 @@ from algo.universe.universe import SimpleUniverse
 from typing import Callable, Generator, Any, Optional
 from algo.blockchain.utils import int_to_tzaware_utc_datetime
 from algo.trading.swapper import SimulationSwapper
+import copy
+from dataclasses import dataclass
+
+
+@dataclass
+class StateLog:
+    time: datetime.datetime
+    state: GlobalPositionAndImpactState
 
 
 def validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves, pos_impact_state, asset_id, time):
@@ -42,16 +50,17 @@ class Simulator:
                  simulation_step_seconds: int,
                  risk_coef: float,
                  log_null_trades: bool = False,
-                 log_state: Optional[Callable[[GlobalPositionAndImpactState], None]] = None
                  ):
 
-        self.log_state = log_state
         self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
         self.optimizers = {asset_id: Optimizer(asset1=asset_id, risk_coef=risk_coef) for asset_id in self.asset_ids}
         self.logger = logging.getLogger(__name__)
         self.signal_providers = signal_providers
-        self.pos_impact_state = pos_impact_state
+
+        self.initial_pos_impact_state = pos_impact_state
+        self.pos_impact_state = copy.deepcopy(pos_impact_state)
+
         self.simulation_step = datetime.timedelta(seconds=simulation_step_seconds)
         self.price_stream = price_stream
         # The amount of time we spend seeding the prices and signals without trading
@@ -60,7 +69,10 @@ class Simulator:
         self.swapper = {aid: SimulationSwapper() for aid in self.asset_ids}
         self.log_null_trades = log_null_trades
 
-    def trade_loop(self, time: datetime.datetime, log_trade: Callable[[TradeInfo], None]):
+    def trade_loop(self, time: datetime.datetime,
+                   log_trade: Callable[[TradeInfo], None],
+                   log_state: Callable[[StateLog], None]
+                   ):
 
         for asset_id in self.asset_ids:
 
@@ -87,19 +99,13 @@ class Simulator:
                 validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves, self.pos_impact_state,
                                   asset_id, time)
                 traded_swap = self.swapper[asset_id].attempt_transaction(opt_swap_quote)
-                self.pos_impact_state.update(
-                    asset_id,
-                    traded_swap,
-                    current_mualgo_reserves,
-                    current_asa_reserves,
-                    time
-                )
+
+                impact_before_trade = self.pos_impact_state.asa_states[asset_id].impact.value(time)
 
                 if traded_swap.asset_buy == 0:
                     price_other = current_asa_reserves / current_mualgo_reserves
                 else:
                     price_other = current_mualgo_reserves / current_asa_reserves
-                asa_impact = self.pos_impact_state.asa_states[asset_id].impact.value(time)
 
                 if opt_swap_quote.amount_out.asset.id == 0:
                     out_reserves = current_mualgo_reserves
@@ -112,7 +118,7 @@ class Simulator:
                                               buy_amount=traded_swap.amount_buy,
                                               buy_reserves=out_reserves,
                                               buy_asset_price_other=price_other,
-                                              asa_impact=asa_impact).to_mualgo_basis()
+                                              asa_impact=impact_before_trade).to_mualgo_basis()
                 trade_record = TradeRecord(
                     time=time,
                     asset_buy_id=opt_swap_quote.amount_out.asset.id,
@@ -123,8 +129,13 @@ class Simulator:
                 trade_info = TradeInfo(trade_record, trade_costs, current_mualgo_reserves / current_asa_reserves)
                 log_trade(trade_info)
 
-                if self.log_state:
-                    self.log_state(self.pos_impact_state)
+                self.pos_impact_state.update(
+                    asset_id,
+                    traded_swap,
+                    current_mualgo_reserves,
+                    current_asa_reserves,
+                    time
+                )
 
             elif self.log_null_trades:
                 trade_costs = TradeCostsMualgo.zero()
@@ -133,12 +144,16 @@ class Simulator:
                                        asa_price=current_mualgo_reserves / current_asa_reserves)
                 log_trade(trade_info)
 
+        log_state(StateLog(time, copy.deepcopy(self.pos_impact_state)))
+
     def update_market_state(self, time, asset_id, price_update):
         self.prices[asset_id] = price_update
         asa_price_mualgo = price_update.asset2_reserves / price_update.asset1_reserves
         self.signal_providers[asset_id].update(time, asa_price_mualgo)
 
-    def run(self, end_time: datetime.datetime, log_trade: Callable[[TradeInfo], None]):
+    def run(self, end_time: datetime.datetime,
+            log_trade: Callable[[TradeInfo], None],
+            log_state: Callable[[StateLog], None]):
 
         # Takes values on the times where we run the trading loop
         current_time: Optional[datetime.datetime] = None
@@ -161,7 +176,7 @@ class Simulator:
                 # Trade only if we are not seeding
                 if time - initial_time > self.seed_time:
                     self.logger.debug(f'Entering trading loop at sim time {current_time}')
-                    self.trade_loop(current_time, log_trade)
+                    self.trade_loop(current_time, log_trade, log_state)
                 else:
                     self.logger.debug(f'Still seeding at sim time {current_time}')
 
