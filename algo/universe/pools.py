@@ -41,7 +41,7 @@ class PoolId:
         return PoolId(**r)
 
 
-def load_pool_info(cache_file :str):
+def load_pool_info(cache_file: str):
     with open(cache_file) as f:
         data = json.load(f)
     pool_store = PoolIdStore(None)

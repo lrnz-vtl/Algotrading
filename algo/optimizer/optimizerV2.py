@@ -80,21 +80,18 @@ class OptimizerV2(BaseOptimizer):
         return self._asset1
 
     def optimal_amount_swap(self, signal_bps: float,
-                            pos_and_impact_state: PositionAndImpactState,
+                            impact_bps: float,
+                            current_asa_position: int,
                             current_asa_reserves: int,
                             current_mualgo_reserves: int,
-                            t: datetime.datetime
                             ) -> Optional[OptimalSwap]:
-
-        impact_bps = pos_and_impact_state.impact.value(t)
-        current_asa_position = pos_and_impact_state.asa_position
 
         asa_price_mualgo = current_mualgo_reserves / current_asa_reserves
 
         # TODO Ideally we should make this also a function of the liquidity, not just the dollar value:
         #  the more illiquid the asset is, the more risky is it to hold it
         quadratic_risk_penalty_asa_buy = self.risk_coef * asa_price_mualgo ** 2
-        linear_risk_penalty_asa_buy = 2.0 * self.risk_coef * current_asa_position.value * asa_price_mualgo
+        linear_risk_penalty_asa_buy = 2.0 * self.risk_coef * current_asa_position * asa_price_mualgo
 
         optimized_asa_buy = optimal_amount_buy_asa(signal_bps=signal_bps,
                                                    impact_bps=impact_bps,

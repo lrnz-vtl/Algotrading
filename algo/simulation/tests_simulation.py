@@ -10,7 +10,6 @@ from datetime import timezone
 from algo.universe.universe import SimpleUniverse
 from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
 from algo.simulation.simulator import Simulator
-from algo.optimizer.optimizerV1 import OptimizerV1
 from algo.optimizer.optimizerV2 import OptimizerV2
 import logging
 from algo.simulation.simulation import make_simulation_results, make_simulation_reports
@@ -28,7 +27,6 @@ class TestReports(unittest.TestCase):
         super().__init__(*args, **kwargs)
 
     def _test_signal(self, make_signal: Callable[[], PriceSignalProvider]):
-        log_null_trades = True
         risk_coef = 0.000002 * 10 ** -6
         price_cache_name = '20220209_prehack'
         universe_cache_name = 'liquid_algo_pools_nousd_prehack'
@@ -39,6 +37,7 @@ class TestReports(unittest.TestCase):
 
         seed_time = datetime.timedelta(days=1)
         initial_time = datetime.datetime(year=2021, month=10, day=15, tzinfo=timezone.utc)
+        # end_time = datetime.datetime(year=2021, month=10, day=18, tzinfo=timezone.utc)
         end_time = datetime.datetime(year=2021, month=12, day=31, tzinfo=timezone.utc)
 
         universe = SimpleUniverse.from_cache(universe_cache_name)
@@ -68,7 +67,6 @@ class TestReports(unittest.TestCase):
                               risk_coef=risk_coef,
                               seed_time=seed_time,
                               price_stream=price_stream,
-                              log_null_trades=log_null_trades,
                               optimizer_cls=self.optimizer_cls
                               )
 

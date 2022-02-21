@@ -18,6 +18,9 @@ RESERVE_PERCENTAGE_CAP = 0.1
 # Only allowed to go 10% above the previous cap after optimisation
 RESERVE_PERCENTAGE_CAP_TOLERANCE = 0.1
 
+# Max percentage of algo to sell in a single trade over our total algo holdings
+MAX_PERCENTAGE_ALGO_SELL = 0.2
+
 
 @dataclass
 class OptimizedBuy:
@@ -96,25 +99,26 @@ class BaseOptimizer(ABC):
 
     @abstractmethod
     def optimal_amount_swap(self, signal_bps: float,
-                            pos_and_impact_state: PositionAndImpactState,
+                            impact_bps: float,
+                            current_asa_position: int,
                             current_asa_reserves: int,
                             current_mualgo_reserves: int,
-                            t: datetime.datetime
                             ) -> Optional[OptimalSwap]:
         pass
 
     def fixed_sell_swap_quote(self, signal_bps: float,
-                              pos_and_impact_state: PositionAndImpactState,
+                              impact_bps: float,
+                              current_asa_position: int,
                               current_asa_reserves: int,
                               current_mualgo_reserves: int,
-                              t: datetime.datetime,
                               current_mualgo_position: int,
                               slippage: float) -> Optional[SwapQuote]:
 
-        optimal_swap = self.optimal_amount_swap(signal_bps, pos_and_impact_state,
+        assert -1 <= impact_bps <= 1
+
+        optimal_swap = self.optimal_amount_swap(signal_bps, impact_bps, current_asa_position,
                                                 current_asa_reserves,
-                                                current_mualgo_reserves,
-                                                t)
+                                                current_mualgo_reserves)
 
         if optimal_swap is not None:
 
@@ -123,7 +127,7 @@ class BaseOptimizer(ABC):
                 asset_in = Asset(self.asset1)
                 input_supply = current_asa_reserves
                 output_supply = current_mualgo_reserves
-                sell_amount_available = pos_and_impact_state.asa_position.value
+                sell_amount_available = current_asa_position
 
             else:
                 # What we sell
@@ -131,7 +135,10 @@ class BaseOptimizer(ABC):
                 input_supply = current_mualgo_reserves
                 output_supply = current_asa_reserves
                 # FIXME What should we subtract here?
-                sell_amount_available = current_mualgo_position - FIXED_FEE_MUALGOS
+                sell_amount_available = min(
+                    current_mualgo_position - 2*FIXED_FEE_MUALGOS,
+                    int(current_mualgo_position * MAX_PERCENTAGE_ALGO_SELL)
+                )
 
             # Convert from int64 to int to avoid overflow errors
             input_supply = int(input_supply)

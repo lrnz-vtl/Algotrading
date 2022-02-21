@@ -27,7 +27,7 @@ async def update_slow(ds):
     print('Running slow updates every 15 min.')
     while True:
         await asyncio.sleep(900)
-        ds.update()
+        ds.update_trade()
 
 
 async def update_graph(ap):

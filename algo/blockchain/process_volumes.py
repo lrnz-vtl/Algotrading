@@ -7,6 +7,7 @@ from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
+from algo.universe.universe import PoolIdStore
 import aiohttp
 
 VOLUME_CACHES_BASEDIR = f'{ROOT_DIR}/caches/volumes'
@@ -25,12 +26,12 @@ class PoolTransaction:
 async def query_transactions_for_pool(session: aiohttp.ClientSession,
                                       pool_address: str,
                                       num_queries: int,
-                                      before_time: Optional[datetime.datetime]
+                                      query_params: QueryParams
                                       ):
     async for tx in query_transactions(session=session,
                                        params={'address': pool_address},
                                        num_queries=num_queries,
-                                       query_params=QueryParams(before_time=before_time)
+                                       query_params=query_params
                                        ):
 
         try:
@@ -99,8 +100,8 @@ class SwapScraper(DataScraper):
         self.address = pool.address
 
     async def scrape(self, session: aiohttp.ClientSession,
-                     timestamp_min: int,
-                     before_time: Optional[datetime.datetime],
+                     timestamp_min: Optional[int],
+                     query_params: QueryParams,
                      num_queries: Optional[int] = None):
 
         def is_transaction_in(tx: PoolTransaction, transaction_out: PoolTransaction):
@@ -112,7 +113,7 @@ class SwapScraper(DataScraper):
         transaction_out: Optional[PoolTransaction] = None
         transaction_in: Optional[PoolTransaction] = None
 
-        async for tx in query_transactions_for_pool(session, self.address, num_queries, before_time=before_time):
+        async for tx in query_transactions_for_pool(session, self.address, num_queries, query_params=query_params):
 
             if tx.time < timestamp_min:
                 break
@@ -154,10 +155,10 @@ class SwapScraper(DataScraper):
 
 class VolumeCacher(DataCacher):
 
-    def __init__(self, cache_file: str, client: TinymanClient,
+    def __init__(self, client: TinymanClient, pool_id_store: PoolIdStore,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
-        super().__init__(cache_file, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
+        super().__init__(pool_id_store, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
         try:

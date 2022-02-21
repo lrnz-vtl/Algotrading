@@ -3,7 +3,7 @@ from dataclasses import asdict
 import pandas as pd
 from matplotlib import pyplot as plt
 import datetime
-from algo.trading.impact import GlobalPositionAndImpactState
+from algo.trading.impact import GlobalPositionAndImpactState, StateLog
 from dataclasses import dataclass
 from algo.blockchain.utils import datetime_to_int
 from algo.simulation.simulator import Simulator
@@ -14,7 +14,7 @@ import numpy as np
 class SimulationResults:
     trade_df: pd.DataFrame
     state_df: pd.DataFrame
-    initial_state: GlobalPositionAndImpactState
+    initial_state: StateLog
 
 
 def make_simulation_results(simulator: Simulator, end_time: datetime.datetime) -> SimulationResults:
@@ -44,10 +44,10 @@ def make_simulation_results(simulator: Simulator, end_time: datetime.datetime) -
     rows = []
     for x in state_data:
         rows += [pd.Series(
-            {'time': x.time, 'asset_id': aid, 'position': state.asa_position.value, 'impact_bps': state.impact.state})
-            for aid, state in x.state.asa_states.items()]
+            {'time': x.time, 'asset_id': aid, 'position': state.position, 'impact_bps': state.impact_bps})
+            for aid, state in x.asa_states.items()]
         rows.append(
-            pd.Series({'time': x.time, 'asset_id': 0, 'position': x.state.mualgo_position, 'impact_bps': np.nan}))
+            pd.Series({'time': x.time, 'asset_id': 0, 'position': x.mualgo_position, 'impact_bps': np.nan}))
 
     state_df = pd.concat(rows, axis=1).transpose()
     state_df['unix_time_seconds'] = state_df['time'].apply(datetime_to_int)
@@ -86,9 +86,9 @@ def make_simulation_reports(sim_results: SimulationResults):
         subdf_state = sim_results.state_df.loc[aid]
 
         ax = axss[0][i]
-        positions = sim_results.initial_state.asa_states[aid].asa_position.value + prepend_zero(subdf['asa_amount']).cumsum()
+        positions = sim_results.initial_state.asa_states[aid].position + prepend_zero(subdf['asa_amount']).cumsum()
         positions = index_to_dt(positions)
-        positions2 = prepend(subdf_state['position'], sim_results.initial_state.asa_states[aid].asa_position.value)
+        positions2 = prepend(subdf_state['position'], sim_results.initial_state.asa_states[aid].position)
         positions2 = index_to_dt(positions2)
         positions.plot(ax=ax, label='position')
         positions2.plot(ax=ax, label='position2', ls='--')

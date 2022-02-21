@@ -50,7 +50,9 @@ class DataStream:
 
             while True:
                 self.logger.debug('Making new request')
-                req = session.get(url=self.url, params=self.params).json()
+                req1 = session.get(url=self.url, params=self.params)
+
+                req = req1.json()
 
                 first_time = None
                 if req['transactions']:
@@ -84,8 +86,10 @@ class PriceUpdate:
     price_update: PoolState
 
 
-def stream_from_price_df(df: pd.DataFrame, start_time: datetime.datetime) -> Generator[PriceUpdate,Any,Any]:
-    assert np.all(df.columns == ['time', 'asset1_reserves', 'asset2_reserves', 'asset1', 'asset2'])
+def stream_from_price_df(df: pd.DataFrame, start_time: datetime.datetime) -> Generator[PriceUpdate, Any, Any]:
+    assert np.all(
+        df.columns == ['time', 'asset1_reserves', 'asset2_reserves', 'block', 'reverse_order_in_block', 'asset1',
+                       'asset2']), f'df.columns = {df.columns}'
     df = df.sort_values(by='time')
 
     assert start_time.tzinfo == timezone.utc
@@ -97,6 +101,7 @@ def stream_from_price_df(df: pd.DataFrame, start_time: datetime.datetime) -> Gen
                 time=row['time'],
                 asset1_reserves=row['asset1_reserves'],
                 asset2_reserves=row['asset2_reserves'],
+                block=row['block'],
                 reverse_order_in_block=None
             )
         )
@@ -225,6 +230,9 @@ class PriceVolumeStream:
                     self.transaction_fee_[address] = True
 
         yield from price_queue.flush()
+
+
+
 
 
 class PriceVolumeDataStore:

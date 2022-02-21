@@ -28,10 +28,9 @@ class TradeRecord:
     asset_sell_id: int
     asset_buy_amount: int
     asset_sell_amount: int
-
-    @staticmethod
-    def zero(time: datetime.datetime, asset_buy_id, asset_sell_id) -> TradeRecord:
-        return TradeRecord(time, asset_buy_id, asset_sell_id, 0, 0)
+    asset_buy_amount_with_slippage: int
+    asset_sell_amount_with_slippage: int
+    txid: str
 
     def to_price_invariant(self, asa_price: float) -> PriceInvariantTradeRecord:
         if self.asset_buy_id > 0:
@@ -51,10 +50,13 @@ class TradeInfo:
     trade: TradeRecord
     costs: TradeCostsMualgo
     asa_price: float
+    signal_bps: float
 
     def assert_price_covariant(self, right: TradeInfo):
-        assert self.trade.to_price_invariant(asa_price=self.asa_price).approx_eq_to(right.trade.to_price_invariant(asa_price=right.asa_price))
+        assert self.trade.to_price_invariant(asa_price=self.asa_price).approx_eq_to(
+            right.trade.to_price_invariant(asa_price=right.asa_price))
         assert self.costs.approx_eq_to(right.costs)
+        assert math.isclose(self.signal_bps, right.signal_bps, rel_tol=REL_TOL)
 
     def price_covariant(self, right: TradeInfo) -> bool:
         try:

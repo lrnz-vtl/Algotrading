@@ -69,11 +69,11 @@ class ASAPosition:
 
     def update(self, traded_swap: AlgoPoolSwap):
         if traded_swap.asset_buy == 0:
-            self.value -= traded_swap.amount_sell
+            self.value -= traded_swap.amount_sell_with_slippage
             # We can't short
             assert self.value >= 0
         else:
-            self.value += traded_swap.amount_buy
+            self.value += traded_swap.amount_buy_with_slippage
 
 
 @dataclass
@@ -81,7 +81,7 @@ class PositionAndImpactState:
     impact: ASAImpactState
     asa_position: ASAPosition
 
-    def update(self, traded_swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
+    def update_trade(self, traded_swap: AlgoPoolSwap, mualgo_reserves: int, asa_reserves: int, t: datetime.datetime):
         self.impact.update(traded_swap, mualgo_reserves, asa_reserves, t)
         self.asa_position.update(traded_swap)
 
@@ -91,16 +91,35 @@ class GlobalPositionAndImpactState:
     asa_states: dict[int, PositionAndImpactState]
     mualgo_position: int
 
-    def update(self, asa_id:int, traded_swap: AlgoPoolSwap,
-               mualgo_reserves: int,
-               asa_reserves: int,
-               t: datetime.datetime):
+    def update_trade(self, asa_id: int, traded_swap: AlgoPoolSwap,
+                     mualgo_reserves: int,
+                     asa_reserves: int,
+                     t: datetime.datetime):
 
         if traded_swap.asset_buy == 0:
-            assert traded_swap.amount_buy >= 0
-            self.mualgo_position += traded_swap.amount_buy
+            assert traded_swap.amount_buy_with_slippage >= 0
+            self.mualgo_position += traded_swap.amount_buy_with_slippage
         elif traded_swap.asset_buy > 0:
-            assert traded_swap.amount_sell >= 0
-            self.mualgo_position -= traded_swap.amount_sell
+            assert traded_swap.amount_sell_with_slippage >= 0
+            self.mualgo_position -= traded_swap.amount_sell_with_slippage
 
-        self.asa_states[asa_id].update(traded_swap, mualgo_reserves, asa_reserves, t)
+        self.asa_states[asa_id].update_trade(traded_swap, mualgo_reserves, asa_reserves, t)
+
+
+@dataclass
+class ASAPositionImpactLog:
+    position: int
+    impact_bps: float
+
+
+@dataclass
+class StateLog:
+    time: datetime.datetime
+    asa_states: dict[int, ASAPositionImpactLog]
+    mualgo_position: int
+
+    def __init__(self, time: datetime.datetime, state: GlobalPositionAndImpactState):
+        self.time = time
+        self.asa_states = {aid: ASAPositionImpactLog(x.asa_position.value, x.impact.state) for aid, x in
+                       state.asa_states.items()}
+        self.mualgo_position = state.mualgo_position

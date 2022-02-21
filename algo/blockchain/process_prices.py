@@ -1,18 +1,20 @@
-from __future__ import  annotations
-import logging
-import aiohttp
+from __future__ import annotations
 import requests
 from dataclasses import dataclass
-from typing import Optional
-from algo.blockchain.algo_requests import query_transactions, QueryParams
+from algo.blockchain.algo_requests import query_transactions
 from base64 import b64decode, b64encode
 import warnings
 import time
-from tinyman.v1.client import TinymanClient
 from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
+import logging
+import aiohttp
+from algo.blockchain.algo_requests import QueryParams
+from algo.universe.universe import PoolIdStore
+from tinyman.v1.client import TinymanClient
 import datetime
+from typing import Optional
 
 PRICE_CACHES_BASEDIR = f'{ROOT_DIR}/caches/prices'
 
@@ -82,7 +84,7 @@ class PriceScraper(DataScraper):
         self.skip_same_time = skip_same_time
 
     async def scrape(self, session: aiohttp.ClientSession,
-                     timestamp_min: int,
+                     timestamp_min: Optional[int],
                      query_params: QueryParams,
                      num_queries: Optional[int] = None):
         prev_time = None
@@ -100,7 +102,7 @@ class PriceScraper(DataScraper):
 
             if tx['tx-type'] != 'appl':
                 continue
-            if tx['round-time'] < timestamp_min:
+            if timestamp_min and tx['round-time'] < timestamp_min:
                 break
             ps = get_pool_state_txn(tx, prev_time, prev_reverse_order_in_block)
             if not ps or (self.skip_same_time and prev_time and prev_time == ps.time):
@@ -112,14 +114,16 @@ class PriceScraper(DataScraper):
         self.logger.debug(f'Stopped scraping price for assets {self.assets}')
 
 
+
+
 class PriceCacher(DataCacher):
 
     def __init__(self, client: TinymanClient,
-                 cache_file: str,
+                 pool_id_store: PoolIdStore,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
 
-        super().__init__(cache_file,
+        super().__init__(pool_id_store,
                          PRICE_CACHES_BASEDIR,
                          client,
                          date_min,

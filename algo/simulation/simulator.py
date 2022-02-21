@@ -1,45 +1,19 @@
 from __future__ import annotations
 import datetime
 import logging
-from algo.trading.trades import TradeInfo, TradeRecord
-from algo.trading.impact import GlobalPositionAndImpactState
+from algo.trading.trades import TradeInfo
+from algo.trading.impact import GlobalPositionAndImpactState, StateLog
 from algo.optimizer.base import BaseOptimizer
-from algo.trading.costs import TradeCostsOther, TradeCostsMualgo
 from algo.trading.signalprovider import PriceSignalProvider
 from algo.blockchain.stream import PoolState, PriceUpdate
 from algo.universe.universe import SimpleUniverse
 from typing import Callable, Generator, Any, Optional, Type
 from algo.blockchain.utils import int_to_tzaware_utc_datetime
 from algo.trading.swapper import SimulationSwapper
-import copy
-from dataclasses import dataclass
+from algo.engine.base import BaseEngine
 
 
-@dataclass
-class StateLog:
-    time: datetime.datetime
-    state: GlobalPositionAndImpactState
-
-
-def validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves, pos_impact_state, asset_id, time):
-    if opt_swap_quote.amount_out.asset.id == 0:
-        out_reserves = current_mualgo_reserves
-        sell_position = pos_impact_state.asa_states[asset_id].asa_position.value
-    elif opt_swap_quote.amount_out.asset.id > 0:
-        assert opt_swap_quote.amount_out.asset.id == asset_id
-        out_reserves = current_asa_reserves
-        sell_position = pos_impact_state.mualgo_position
-    else:
-        raise ValueError
-
-    assert opt_swap_quote.amount_out.amount <= out_reserves, \
-        f"Buy amount:{opt_swap_quote.amount_out.amount} > pool reserve {out_reserves}: " \
-        f"for asset {opt_swap_quote.amount_out.asset.id} in pool {asset_id} at time {time}"
-
-    assert opt_swap_quote.amount_in.amount <= sell_position
-
-
-class Simulator:
+class Simulator(BaseEngine):
 
     def __init__(self,
                  signal_providers: dict[int, PriceSignalProvider],
@@ -50,17 +24,18 @@ class Simulator:
                  simulation_step_seconds: int,
                  risk_coef: float,
                  optimizer_cls: Type[BaseOptimizer],
-                 log_null_trades: bool = False,
+                 slippage: float = 0
                  ):
 
         self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
-        self.optimizers = {asset_id: optimizer_cls.make(asset1=asset_id, risk_coef=risk_coef) for asset_id in self.asset_ids}
+        self.optimizers = {asset_id: optimizer_cls.make(asset1=asset_id, risk_coef=risk_coef) for asset_id in
+                           self.asset_ids}
         self.logger = logging.getLogger(__name__)
         self.signal_providers = signal_providers
 
-        self.initial_pos_impact_state = pos_impact_state
-        self.pos_impact_state = copy.deepcopy(pos_impact_state)
+        self.initial_pos_impact_state = StateLog(None, pos_impact_state)
+        self.pos_impact_state = pos_impact_state
 
         self.simulation_step = datetime.timedelta(seconds=simulation_step_seconds)
         self.price_stream = price_stream
@@ -68,86 +43,12 @@ class Simulator:
         self.seed_time = seed_time
         self.prices: dict[int, PoolState] = {}
         self.swapper = {aid: SimulationSwapper() for aid in self.asset_ids}
-        self.log_null_trades = log_null_trades
+        self.last_update_times = {}
 
-    def trade_loop(self, time: datetime.datetime,
-                   log_trade: Callable[[TradeInfo], None],
-                   log_state: Callable[[StateLog], None]
-                   ):
+        self.slippage = slippage
 
-        for asset_id in self.asset_ids:
-
-            self.logger.debug(f'Entering trade logic for asset {asset_id}')
-
-            if asset_id not in self.prices:
-                self.logger.warning(f'Price for asset {asset_id} at time {time} not in data, skipping the trade logic.')
-                continue
-
-            opt: BaseOptimizer = self.optimizers[asset_id]
-
-            signal_bps = self.signal_providers[asset_id].value
-
-            current_asa_reserves = self.prices[asset_id].asset1_reserves
-            current_mualgo_reserves = self.prices[asset_id].asset2_reserves
-            opt_swap_quote = opt.fixed_sell_swap_quote(signal_bps=signal_bps,
-                                                       pos_and_impact_state=self.pos_impact_state.asa_states[asset_id],
-                                                       current_asa_reserves=current_asa_reserves,
-                                                       current_mualgo_reserves=current_mualgo_reserves,
-                                                       t=time,
-                                                       current_mualgo_position=self.pos_impact_state.mualgo_position,
-                                                       slippage=0)
-
-            if opt_swap_quote is not None:
-
-                validate_sim_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves, self.pos_impact_state,
-                                  asset_id, time)
-                traded_swap = self.swapper[asset_id].attempt_transaction(opt_swap_quote)
-
-                impact_before_trade = self.pos_impact_state.asa_states[asset_id].impact.value(time)
-
-                if traded_swap.asset_buy == 0:
-                    price_other = current_asa_reserves / current_mualgo_reserves
-                else:
-                    price_other = current_mualgo_reserves / current_asa_reserves
-
-                if opt_swap_quote.amount_out.asset.id == 0:
-                    out_reserves = current_mualgo_reserves
-                elif opt_swap_quote.amount_out.asset.id > 0:
-                    out_reserves = current_asa_reserves
-                else:
-                    raise ValueError
-
-                trade_costs = TradeCostsOther(buy_asset=traded_swap.asset_buy,
-                                              buy_amount=traded_swap.amount_buy,
-                                              buy_reserves=out_reserves,
-                                              buy_asset_price_other=price_other,
-                                              asa_impact=impact_before_trade).to_mualgo_basis()
-                trade_record = TradeRecord(
-                    time=time,
-                    asset_buy_id=opt_swap_quote.amount_out.asset.id,
-                    asset_sell_id=opt_swap_quote.amount_in.asset.id,
-                    asset_buy_amount=opt_swap_quote.amount_out.amount,
-                    asset_sell_amount=opt_swap_quote.amount_in.amount
-                )
-                trade_info = TradeInfo(trade_record, trade_costs, current_mualgo_reserves / current_asa_reserves)
-                log_trade(trade_info)
-
-                self.pos_impact_state.update(
-                    asset_id,
-                    traded_swap,
-                    current_mualgo_reserves,
-                    current_asa_reserves,
-                    time
-                )
-
-            elif self.log_null_trades:
-                trade_costs = TradeCostsMualgo.zero()
-                trade_record = TradeRecord.zero(time, 0, asset_id)
-                trade_info = TradeInfo(trade_record, trade_costs,
-                                       asa_price=current_mualgo_reserves / current_asa_reserves)
-                log_trade(trade_info)
-
-        log_state(StateLog(time, copy.deepcopy(self.pos_impact_state)))
+    def current_time_prov(self) -> datetime.datetime:
+        return self._sim_time
 
     def update_market_state(self, time, asset_id, price_update):
         self.prices[asset_id] = price_update
@@ -159,7 +60,8 @@ class Simulator:
             log_state: Callable[[StateLog], None]):
 
         # Takes values on the times where we run the trading loop
-        current_time: Optional[datetime.datetime] = None
+        self._sim_time: Optional[datetime.datetime] = None
+
         initial_time: Optional[datetime.datetime] = None
 
         for x in self.price_stream:
@@ -171,20 +73,23 @@ class Simulator:
 
             if initial_time is None:
                 initial_time = time
-                current_time = time
-            assert time >= current_time
+                self._sim_time = time
 
-            while time - current_time > self.simulation_step:
-                current_time = current_time + self.simulation_step
+            assert time >= self._sim_time, f"{time}, {self._sim_time}"
+
+            while self._sim_time + self.simulation_step < time:
+
+                self._sim_time = self._sim_time + self.simulation_step
                 # Trade only if we are not seeding
-                if time - initial_time > self.seed_time:
-                    self.logger.debug(f'Entering trading loop at sim time {current_time}')
-                    self.trade_loop(current_time, log_trade, log_state)
+                if self._sim_time - initial_time > self.seed_time:
+                    self.logger.debug(f'Entering trading loop at sim time {self._sim_time}')
+                    self.trade_loop(log_trade, log_state)
                 else:
-                    self.logger.debug(f'Still seeding at sim time {current_time}')
+                    self.logger.debug(f'Still seeding at sim time {self._sim_time}')
 
             # End the simulation
             if time > end_time:
                 break
 
+            self.last_update_times[asset_id] = time
             self.update_market_state(time, asset_id, price_update)

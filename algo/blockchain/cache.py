@@ -1,7 +1,7 @@
 import logging
 import aiohttp
 from algo.blockchain.algo_requests import QueryParams
-from algo.universe.universe import SimpleUniverse
+from algo.universe.universe import SimpleUniverse, PoolIdStore
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa
@@ -15,6 +15,7 @@ from datetime import timezone
 from typing import Optional, Iterable, AsyncGenerator
 from abc import ABC, abstractmethod
 import asyncio
+import uvloop
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -82,14 +83,15 @@ async def groupby_days(gen: AsyncGenerator):
 
 
 class DataCacher(ABC):
-    def __init__(self, cache_file: str,
+    def __init__(self,
+                 pool_id_store: PoolIdStore,
                  cache_basedir: str,
                  client: TinymanClient,
                  date_min: datetime.datetime,
                  date_max: Optional[datetime.datetime]):
 
         self.client = client
-        self.pools = [(x.asset1_id, x.asset2_id) for x in SimpleUniverse.from_cache(cache_file).pools]
+        self.pools = [(x.asset1_id, x.asset2_id) for x in pool_id_store.pools]
 
         self.dateScheduler = DateScheduler(date_min, date_max)
 
@@ -107,6 +109,8 @@ class DataCacher(ABC):
         async def main():
             async with aiohttp.ClientSession() as session:
                 await asyncio.gather(*[self._cache_pool(session, assets, basedir) for assets in self.pools])
+
+        uvloop.install()
 
         asyncio.run(main())
 
