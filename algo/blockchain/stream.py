@@ -45,28 +45,31 @@ class DataStream:
         self.logger = logging.getLogger(__name__)
 
     def next_transaction(self):
-        while True:
-            self.logger.debug('Making new request')
-            req = requests.get(url=self.url, params=self.params).json()
 
-            first_time = None
-            if req['transactions']:
-                first_time = datetime.datetime.fromtimestamp(req['transactions'][0]['round-time'])
-            self.logger.debug(f'Queried transaction group, time={first_time}')
+        with requests.session() as session:
 
-            for tx in req['transactions']:
-                pool = None
-                if tx['sender'] in self.pools:
-                    pool = tx['sender']
-                elif tx['tx-type'] == 'pay' and tx['payment-transaction']['receiver'] in self.pools:
-                    pool = tx['payment-transaction']['receiver']
-                elif tx['tx-type'] == 'axfer' and tx['asset-transfer-transaction']['receiver'] in self.pools:
-                    pool = tx['asset-transfer-transaction']['receiver']
-                if pool:
-                    yield pool, tx
-            if 'next-token' not in req:
-                break
-            self.params['next'] = req['next-token']
+            while True:
+                self.logger.debug('Making new request')
+                req = session.get(url=self.url, params=self.params).json()
+
+                first_time = None
+                if req['transactions']:
+                    first_time = datetime.datetime.fromtimestamp(req['transactions'][0]['round-time'])
+                self.logger.debug(f'Queried transaction group, time={first_time}')
+
+                for tx in req['transactions']:
+                    pool = None
+                    if tx['sender'] in self.pools:
+                        pool = tx['sender']
+                    elif tx['tx-type'] == 'pay' and tx['payment-transaction']['receiver'] in self.pools:
+                        pool = tx['payment-transaction']['receiver']
+                    elif tx['tx-type'] == 'axfer' and tx['asset-transfer-transaction']['receiver'] in self.pools:
+                        pool = tx['asset-transfer-transaction']['receiver']
+                    if pool:
+                        yield pool, tx
+                if 'next-token' not in req:
+                    break
+                self.params['next'] = req['next-token']
 
 
 @dataclass
