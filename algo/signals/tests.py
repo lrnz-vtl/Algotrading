@@ -23,19 +23,19 @@ class TestAnalysisDs(unittest.TestCase):
 
         self.ds = AnalysisDataStore(price_cache, volume_cache, universe, filter_liq)
 
-        respMaker = SimpleResponse(30)
-        self.response = self.ds.make_response(respMaker)
-
         minutes = (30, 60, 120)
         self.featurizers = [MAPriceFeaturizer(m) for m in minutes]
 
         super().__init__(*args, **kwargs)
 
     def test_features(self):
+        respMaker = SimpleResponse(30)
+        response = self.ds.make_response(respMaker)
+
         f, axs = plt.subplots(1, 3, figsize=(10, 5))
 
         for featurizer, ax in zip(self.featurizers, axs):
-            betas = self.ds.eval_feature(self.ds.make_asset_features(featurizer), self.response)
+            betas = self.ds.eval_feature(self.ds.make_asset_features(featurizer), response)
 
             ax.hist(betas)
             ax.set_title(f'minutes = {featurizer.minutes}')
@@ -43,8 +43,21 @@ class TestAnalysisDs(unittest.TestCase):
         plt.show();
 
     def test_model(self):
+        respMaker = SimpleResponse(30)
+        response = self.ds.make_response(respMaker)
+
         features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
         model = LinearRegression()
-        self.ds.eval_model(model, features, self.response, filter_nans=True)
+        self.ds.eval_model(model, features, response, filter_nans=True)
+
+        print(f'betas = {model.coef_}')
+
+    def test_model_5minlag(self):
+        respMaker = SimpleResponse(120, 5)
+        response = self.ds.make_response(respMaker)
+
+        features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
+        model = LinearRegression()
+        self.ds.eval_model(model, features, response, filter_nans=True)
 
         print(f'betas = {model.coef_}')

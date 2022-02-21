@@ -97,8 +97,10 @@ class GlobalPositionAndImpactState:
                t: datetime.datetime):
 
         if traded_swap.asset_buy == 0:
+            assert traded_swap.amount_buy >= 0
             self.mualgo_position += traded_swap.amount_buy
         elif traded_swap.asset_buy > 0:
+            assert traded_swap.amount_sell >= 0
             self.mualgo_position -= traded_swap.amount_sell
 
         self.asa_states[asa_id].update(traded_swap, mualgo_reserves, asa_reserves, t)

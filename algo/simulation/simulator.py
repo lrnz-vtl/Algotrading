@@ -3,12 +3,12 @@ import datetime
 import logging
 from algo.trading.trades import TradeInfo, TradeRecord
 from algo.trading.impact import GlobalPositionAndImpactState
-from algo.trading.optimizer import Optimizer
+from algo.optimizer.base import BaseOptimizer
 from algo.trading.costs import TradeCostsOther, TradeCostsMualgo
 from algo.trading.signalprovider import PriceSignalProvider
 from algo.blockchain.stream import PoolState, PriceUpdate
 from algo.universe.universe import SimpleUniverse
-from typing import Callable, Generator, Any, Optional
+from typing import Callable, Generator, Any, Optional, Type
 from algo.blockchain.utils import int_to_tzaware_utc_datetime
 from algo.trading.swapper import SimulationSwapper
 import copy
@@ -49,12 +49,13 @@ class Simulator:
                  price_stream: Generator[PriceUpdate, Any, Any],
                  simulation_step_seconds: int,
                  risk_coef: float,
+                 optimizer_cls: Type[BaseOptimizer],
                  log_null_trades: bool = False,
                  ):
 
         self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
-        self.optimizers = {asset_id: Optimizer(asset1=asset_id, risk_coef=risk_coef) for asset_id in self.asset_ids}
+        self.optimizers = {asset_id: optimizer_cls.make(asset1=asset_id, risk_coef=risk_coef) for asset_id in self.asset_ids}
         self.logger = logging.getLogger(__name__)
         self.signal_providers = signal_providers
 
@@ -82,7 +83,7 @@ class Simulator:
                 self.logger.warning(f'Price for asset {asset_id} at time {time} not in data, skipping the trade logic.')
                 continue
 
-            opt: Optimizer = self.optimizers[asset_id]
+            opt: BaseOptimizer = self.optimizers[asset_id]
 
             signal_bps = self.signal_providers[asset_id].value
 

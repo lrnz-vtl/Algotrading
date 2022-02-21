@@ -52,9 +52,10 @@ class EmaSignalParam:
 
 class EmaSignalProvider(PriceSignalProvider):
 
-    def __init__(self, params: list[EmaSignalParam]):
+    def __init__(self, params: list[EmaSignalParam], cap_bps: float = 1.0):
         self.features = [PriceEmaFeature(param.timescale_seconds) for param in params]
         self.betas = [param.beta for param in params]
+        self.cap_bps = cap_bps
 
     def update(self, t: datetime.datetime, price: float) -> None:
         for feature in self.features:
@@ -62,7 +63,8 @@ class EmaSignalProvider(PriceSignalProvider):
 
     @property
     def value(self) -> float:
-        return sum(beta * x.value for beta, x in zip(self.betas, self.features))
+        value = sum(beta * x.value for beta, x in zip(self.betas, self.features))
+        return np.clip(value, -self.cap_bps, self.cap_bps)
 
 
 class RandomSignalProvider(PriceSignalProvider):
