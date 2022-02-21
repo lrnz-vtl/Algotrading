@@ -12,6 +12,10 @@ from tinyman.v1.pools import SwapQuote
 from abc import ABC, abstractmethod
 
 
+# Do not trade if the last successful call of scrape() was older than this
+LAG_TRADE_LIMIT_SECONDS = 1 * 60
+
+
 def lag_ms(dt: datetime.timedelta):
     return int(dt.total_seconds() * 1000)
 
@@ -46,6 +50,7 @@ class BaseEngine(ABC):
     pos_impact_state: GlobalPositionAndImpactState
     swapper: dict[int, Swapper]
     slippage: float
+    last_market_state_update: datetime.datetime
 
     @abstractmethod
     def current_time_prov(self) -> datetime.datetime:
@@ -56,6 +61,9 @@ class BaseEngine(ABC):
         self.logger.debug(f'Entering trade loop at time {time_start}')
 
         log_state(StateLog(time_start, self.pos_impact_state))
+
+        if (time_start - self.last_market_state_update).total_seconds() > LAG_TRADE_LIMIT_SECONDS:
+            self.logger.error('Error the market data is stale, skipping trading loop entirely')
 
         for asset_id in self.asset_ids:
 
@@ -115,7 +123,10 @@ class BaseEngine(ABC):
                         f'Traded {time_since_start} ms after loop start, {time_since_opt} ms after optimisation'
                         f'\n{trade_record}')
 
-                    trade_info = TradeInfo(trade_record, trade_costs, current_mualgo_reserves / current_asa_reserves, signal_bps)
+                    trade_info = TradeInfo(trade=trade_record,
+                                           costs=trade_costs,
+                                           asa_price=current_mualgo_reserves / current_asa_reserves,
+                                           signal_bps=signal_bps)
                     log_trade(trade_info)
 
                     self.pos_impact_state.update_trade(

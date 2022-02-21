@@ -80,6 +80,8 @@ class Simulator(BaseEngine):
             while self._sim_time + self.simulation_step < time:
 
                 self._sim_time = self._sim_time + self.simulation_step
+                self.last_market_state_update = self._sim_time
+
                 # Trade only if we are not seeding
                 if self._sim_time - initial_time > self.seed_time:
                     self.logger.debug(f'Entering trading loop at sim time {self._sim_time}')

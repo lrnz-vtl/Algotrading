@@ -119,7 +119,6 @@ class TestReports(unittest.TestCase):
                               risk_coef=risk_coef,
                               seed_time=seed_time,
                               price_stream=price_stream,
-                              log_null_trades=log_null_trades,
                               optimizer_cls=self.optimizer_cls
                               )
 

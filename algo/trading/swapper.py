@@ -77,20 +77,20 @@ class TimedSwapQuote:
     quote: SwapQuote
 
 
+@dataclass
+class RedeemedAmounts:
+    asa_amount: int
+    mualgo_amount: int
+
+
 class Swapper(ABC):
     @abstractmethod
     def attempt_transaction(self, quote: TimedSwapQuote) -> MaybeTradedSwap:
         pass
 
     @abstractmethod
-    def fetch_excess_amounts(self, asa_price: float):
+    def fetch_excess_amounts(self, asa_price: float) -> RedeemedAmounts:
         pass
-
-
-@dataclass
-class RedeemedAmounts:
-    asa_amount: int
-    algo_amount: int
 
 
 class ProductionSwapper(Swapper):
@@ -101,7 +101,8 @@ class ProductionSwapper(Swapper):
         self.key = key
         self.logger = logging.getLogger(__name__)
         self.client = client
-        assert self.pool.exists()
+        assert self.pool.exists
+        self._asset_optin()
 
     def _client_optin(self):
         if not self.client.is_opted_in():
@@ -129,7 +130,7 @@ class ProductionSwapper(Swapper):
         self.logger.info(f'Opted into asset, {res}')
 
     def attempt_transaction(self, quote: TimedSwapQuote) -> MaybeTradedSwap:
-        transaction_group = self.pool.prepare_swap_transactions_from_quote(quote)
+        transaction_group = self.pool.prepare_swap_transactions_from_quote(quote.quote)
         transaction_group.sign_with_private_key(self.address, self.key)
         res = self.client.submit(transaction_group)
 
@@ -150,7 +151,7 @@ class ProductionSwapper(Swapper):
     def fetch_excess_amounts(self, asa_price: float) -> RedeemedAmounts:
 
         time = datetime.datetime.utcnow()
-        self.logger.info(f'Entering fetch_excess_amounts for asset {self.aid}')
+        self.logger.debug(f'Entering fetch_excess_amounts for asset {self.aid}')
 
         excess = self.pool.fetch_excess_amounts(self.address)
 
@@ -162,7 +163,7 @@ class ProductionSwapper(Swapper):
 
             if asset.id == 0:
                 algo_value = amount / (10 ** 6)
-                ret.algo_amount = amount
+                ret.mualgo_amount = amount
             elif asset.id == self.aid:
                 algo_value = amount * asa_price / (10 ** 6)
                 ret.asa_amount = amount
@@ -178,12 +179,12 @@ class ProductionSwapper(Swapper):
                 self.logger.info(f'Redeemed {asset_amount} from pool {self.aid}, result={result}')
 
                 if asset.id == 0:
-                    ret.algo_amount = amount
+                    ret.mualgo_amount = amount
                 else:
                     ret.asa_amount = amount
 
         dt = lag_ms(datetime.datetime.utcnow() - time)
-        self.logger.info(f'Spent {dt} ms inside fetch_excess_amounts')
+        self.logger.debug(f'Spent {dt} ms inside fetch_excess_amounts')
 
         return ret
 

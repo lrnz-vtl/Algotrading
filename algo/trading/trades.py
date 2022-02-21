@@ -3,6 +3,7 @@ import datetime
 from dataclasses import dataclass
 from algo.trading.costs import TradeCostsMualgo, REL_TOL
 import math
+from pydantic import BaseModel
 
 
 @dataclass
@@ -21,8 +22,7 @@ class PriceInvariantTradeRecord:
                and math.isclose(self.asset_buy_amount, right.asset_buy_amount, rel_tol=REL_TOL)
 
 
-@dataclass
-class TradeRecord:
+class TradeRecord(BaseModel):
     time: datetime.datetime
     asset_buy_id: int
     asset_sell_id: int
@@ -45,8 +45,7 @@ class TradeRecord:
                                          asset_sell_amount)
 
 
-@dataclass
-class TradeInfo:
+class TradeInfo(BaseModel):
     trade: TradeRecord
     costs: TradeCostsMualgo
     asa_price: float

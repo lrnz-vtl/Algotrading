@@ -14,9 +14,8 @@ from algo.simulation.simulator import Simulator
 from algo.universe.pools import PoolId
 from algo.blockchain.utils import datetime_to_int
 from algo.trading.trades import TradeInfo
-from algo.optimizer.optimizerV1 import OptimizerV1
 from algo.optimizer.optimizerV2 import OptimizerV2
-
+import json
 
 @dataclass
 class SimDebugParameter:
@@ -84,7 +83,6 @@ class TestSimulator(unittest.TestCase):
                               risk_coef=risk_coef,
                               seed_time=seed_time,
                               price_stream=price_stream(),
-                              log_null_trades=log_null_trades,
                               optimizer_cls=self.optimizer_cls
                               )
 
@@ -99,7 +97,6 @@ class TestSimulator(unittest.TestCase):
         return logged_trades
 
     def test_liquidation(self):
-        log_null_trades = True
 
         initial_position_multiplier = 1 / 100
 
@@ -144,12 +141,14 @@ class TestSimulator(unittest.TestCase):
                               risk_coef=risk_coef,
                               seed_time=seed_time,
                               price_stream=price_stream,
-                              log_null_trades=log_null_trades,
                               optimizer_cls=self.optimizer_cls
                               )
 
         def log_trade(x):
             self.logger.info(x)
+            with open('test_trades.txt', 'a') as f:
+                f.write(str(x.json()))
+                f.write('\n')
 
         def log_state(x):
             pass
@@ -199,7 +198,6 @@ class TestSimulator(unittest.TestCase):
                               risk_coef=risk_coef,
                               seed_time=seed_time,
                               price_stream=price_stream,
-                              log_null_trades=log_null_trades,
                               optimizer_cls=self.optimizer_cls
                               )
 

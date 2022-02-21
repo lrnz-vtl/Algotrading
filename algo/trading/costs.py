@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 from dataclasses import dataclass
+from pydantic import BaseModel
 
 # TODO Check me
 _FIXED_FEE_ALGOS = 0.003
@@ -29,16 +30,11 @@ def buy_lin_impact_cost_other(amount: int, price: float, impact_bps: float) -> f
     return amount * price * impact_bps
 
 
-@dataclass
-class TradeCostsMualgo:
+class TradeCostsMualgo(BaseModel):
     quadratic_impact_cost_mualgo: float
     linear_impact_cost_mualgo: float
     fees_mualgo: float
     fixed_fees_mualgo: float
-
-    @staticmethod
-    def zero() -> TradeCostsMualgo:
-        return TradeCostsMualgo(0, 0, 0, 0)
 
     def approx_eq_to(self, other: TradeCostsMualgo) -> bool:
         return math.isclose(self.quadratic_impact_cost_mualgo, other.quadratic_impact_cost_mualgo, rel_tol=REL_TOL) \

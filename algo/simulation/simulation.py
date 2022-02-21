@@ -29,7 +29,8 @@ def make_simulation_results(simulator: Simulator, end_time: datetime.datetime) -
 
     simulator.run(end_time, log_trade, log_state)
 
-    trade_df = pd.json_normalize([asdict(obj) for obj in trade_data])
+    # trade_df = pd.json_normalize([asdict(obj) for obj in trade_data])
+    trade_df = pd.json_normalize([obj.dict() for obj in trade_data])
     trade_df['unix_time_seconds'] = trade_df['trade.time'].apply(datetime_to_int)
 
     sell_asa_idx = trade_df['trade.asset_sell_id'] > 0

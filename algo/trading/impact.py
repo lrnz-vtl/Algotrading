@@ -1,7 +1,8 @@
 import datetime
 from dataclasses import dataclass
 import numpy as np
-from algo.trading.swapper import AlgoPoolSwap
+from algo.trading.swapper import AlgoPoolSwap, RedeemedAmounts
+from algo.trading.costs import FIXED_FEE_MUALGOS
 import pandas as pd
 
 # Leading order Taylor expansions of the functions below
@@ -104,6 +105,11 @@ class GlobalPositionAndImpactState:
             self.mualgo_position -= traded_swap.amount_sell_with_slippage
 
         self.asa_states[asa_id].update_trade(traded_swap, mualgo_reserves, asa_reserves, t)
+
+    def update_redeem(self, asa_id: int, redeemed: RedeemedAmounts):
+
+        self.mualgo_position += redeemed.mualgo_amount
+        self.asa_states[asa_id].asa_position.value += redeemed.asa_amount
 
 
 @dataclass
