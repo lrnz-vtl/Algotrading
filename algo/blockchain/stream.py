@@ -46,6 +46,7 @@ class DataStream:
 
     def next_transaction(self):
         while True:
+            self.logger.debug('Making new request')
             req = requests.get(url=self.url, params=self.params).json()
 
             first_time = None

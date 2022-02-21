@@ -10,6 +10,7 @@ class QueryParams:
     after_time: Optional[datetime.date] = None
     before_time: Optional[datetime.date] = None
     min_block: Optional[int] = None
+    max_block: Optional[int] = None
 
     def make_params(self):
         params = {}
@@ -19,6 +20,8 @@ class QueryParams:
             params['after-time'] = self.after_time.strftime('%Y-%m-%d')
         if self.min_block is not None:
             params['min-round'] = self.min_block
+        if self.min_block is not None:
+            params['max-round'] = self.max_block
         return params
 
 

@@ -28,10 +28,11 @@ class PoolState:
     time: int
     asset1_reserves: int
     asset2_reserves: int
+    block: int
     reverse_order_in_block: int
 
     def with_reverse_order(self, reverse_order_in_block: int) -> PoolState:
-        return PoolState(self.time, self.asset1_reserves, self.asset2_reserves, reverse_order_in_block)
+        return PoolState(self.time, self.asset1_reserves, self.asset2_reserves, self.block, reverse_order_in_block)
 
 
 def get_pool_state(pool_address: str):
@@ -61,7 +62,7 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_o
     else:
         reverse_order_in_block = 0
 
-    return PoolState(tx['round-time'], s1, s2, reverse_order_in_block)
+    return PoolState(tx['round-time'], s1, s2, tx['confirmed-round'], reverse_order_in_block)
 
 
 class PriceScraper(DataScraper):

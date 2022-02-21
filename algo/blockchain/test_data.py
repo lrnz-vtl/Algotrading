@@ -111,7 +111,7 @@ class TestStream(unittest.TestCase):
         time_max = max(prices['time'].max(), volumes['time'].max())
         time_min = min(prices['time'].min(), volumes['time'].min())
 
-        self.logger.info(f'Scraped {time_max-time_min} seconds of data in {seconds} seconds.')
+        self.logger.info(f'Scraped {time_max - time_min} seconds of data in {seconds} seconds.')
         for i in range(10):
             time.sleep(sleep_seconds)
             ti = time.time()
@@ -127,3 +127,17 @@ class TestStream(unittest.TestCase):
 
         market_data = process_market_df(prices, volumes)
         self.logger.debug(market_data)
+
+    def test_stream2(self):
+        universe = SimpleUniverse.from_cache('liquid_algo_pools_nousd_prehack')
+
+        query_params = QueryParams(min_block=19372771, max_block=19372866)
+
+        ds = DataStream(universe, query_params)
+        pvs = PriceVolumeStream(ds)
+        ti = time.time()
+        for tx in pvs.scrape():
+            pass
+        seconds = time.time() - ti
+
+        self.logger.info(f'Seconds = {seconds}')
