@@ -107,7 +107,7 @@ class Engine(BaseEngine):
     def redeem_amounts(self) -> None:
 
         time = self.current_time_prov()
-        self.logger.info(f'Entering redeem loop at time {time}')
+        self.logger.info(f'Entering redeem loop.')
 
         for aid in self.asset_ids:
             if aid not in self.prices:
@@ -124,7 +124,7 @@ class Engine(BaseEngine):
     def sync_state(self) -> None:
 
         time = self.current_time_prov()
-        self.logger.info(f'Entering sync_state loop at time {time}')
+        self.logger.info(f'Entering sync_state loop.')
 
         check_diff = True
         if self.pos_impact_state is None:

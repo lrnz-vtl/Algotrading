@@ -27,24 +27,20 @@ def not_nan_mask(*vecs):
 
 class AnalysisDataStore:
 
-    def __init__(self, price_cache: str, volume_cache: str, universe: SimpleUniverse, filter_liq: Optional[float]):
+    def __init__(self, price_cache: str, volume_cache: str, universe: SimpleUniverse):
 
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
 
-        filter = make_filter_from_universe(universe)
+        filter_ = make_filter_from_universe(universe)
 
-        dfp = load_algo_pools(price_cache, 'prices', filter)
-        dfv = load_algo_pools(volume_cache, 'volumes', filter)
+        dfp = load_algo_pools(price_cache, 'prices', filter_)
+        dfv = load_algo_pools(volume_cache, 'volumes', filter_)
 
         df = process_market_df(dfp, dfv)
         df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
         assert np.all(df['asset2'] == 0)
         df = df.drop(columns=['asset2'])
-
-        # Filter on liquidity
-        if filter_liq is not None:
-            df = df[df['algo_reserves'] > filter_liq]
 
         asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools), "Need to provide a Universe with only Algo pools"
@@ -108,37 +104,7 @@ class AnalysisDataStore:
 
         return train_idx, test_idx
 
-    def eval_model(self, model,
-                   features: pd.DataFrame,
-                   response: ComputedLookaheadResponse,
-                   filter_nans: bool):
-
-        X, y, w = features, response.ts, self.weights
-
-        train_idx, test_idx = self.make_train_val_splits(response.lookahead_time)
-
-        if filter_nans:
-            mask = not_nan_mask(X, y, w)
-            X_full, y_full, w_full = X[mask], y[mask], w[mask]
-            train_idx = train_idx & mask
-            test_idx = test_idx & mask
-            self.logger.info(f'Train, val size after removing NaNs = {train_idx.sum()}, {test_idx.sum()}')
-        else:
-            X_full, y_full, w_full = X, y, w
-
-        X_train, y_train, w_train = X[train_idx], y[train_idx], w[train_idx]
-        X_test, y_test, w_test = X[test_idx], y[test_idx], w[test_idx]
-
-        pca = PCA().fit(X_train)
-        self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
-
-        train_times = X_train.index.get_level_values(TIME_INDEX_NAME)
-        test_times = X_test.index.get_level_values(TIME_INDEX_NAME)
-        assert train_times.max() < test_times.min()
-        self.logger.info(f'Max train time = {train_times.max()}, Min test time = {test_times.min()}')
-
-        m = model.fit(X_train, y_train, sample_weight=w_train)
-
+    def _eval_fitted_model(self, m, X_test, y_test, w_test, X_full, y_full, w_full):
         y_pred = m.predict(X_test)
         oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
         self.logger.info(f'OOS R^2 = {oos_rsq}')
@@ -160,3 +126,59 @@ class AnalysisDataStore:
             ax.grid()
 
         plt.show()
+
+    def test_model(self, m, X_test, y_test, w_test):
+        return self._eval_fitted_model(m, X_test, y_test, w_test, X_test, y_test, w_test)
+
+    def fit_model(self, model, X_train, y_train, w_train):
+
+        pca = PCA().fit(X_train)
+        self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
+
+        return model.fit(X_train, y_train, sample_weight=w_train)
+
+    def make_filter_mask(self, X, y, w, filter_nans: bool, filter_liq: Optional[int]):
+        # Filter on liquidity
+        if filter_liq is not None:
+            liq_idx = self.df['algo_reserves'] > filter_liq
+        else:
+            liq_idx = pd.Series(True, index=self.df.index)
+
+        # FIXME Does this introduce lookahead by dropping rows where the future price crashes?
+        if filter_nans:
+            nan_mask = not_nan_mask(X, y, w)
+        else:
+            nan_mask = pd.Series(True, index=self.df.index)
+
+        return nan_mask & liq_idx
+
+    def fit_and_eval_model(self, model,
+                           features: pd.DataFrame,
+                           response: ComputedLookaheadResponse,
+                           filter_nans: bool,
+                           filter_liq: Optional[int]
+                           ):
+
+        X, y, w = features, response.ts, self.weights
+
+        train_idx, test_idx = self.make_train_val_splits(response.lookahead_time)
+
+        mask = self.make_filter_mask(X, y, w, filter_nans, filter_liq)
+
+        train_idx = train_idx & mask
+        test_idx = test_idx & mask
+
+        self.logger.info(f'Train, val size after removing NaNs and low liquidity = {train_idx.sum()}, {test_idx.sum()}')
+
+        X_full, y_full, w_full = X[mask], y[mask], w[mask]
+        X_train, y_train, w_train = X[train_idx], y[train_idx], w[train_idx]
+        X_test, y_test, w_test = X[test_idx], y[test_idx], w[test_idx]
+
+        train_times = X_train.index.get_level_values(TIME_INDEX_NAME)
+        test_times = X_test.index.get_level_values(TIME_INDEX_NAME)
+        assert train_times.max() < test_times.min()
+        self.logger.info(f'Max train time = {train_times.max()}, Min test time = {test_times.min()}')
+
+        m = self.fit_model(model, X_train, y_train, w_train)
+
+        self._eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full)

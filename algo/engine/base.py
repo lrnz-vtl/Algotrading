@@ -10,6 +10,7 @@ from typing import Callable
 from algo.trading.swapper import TimedSwapQuote, MaybeTradedSwap, Swapper
 from tinyman.v1.pools import SwapQuote
 from abc import ABC, abstractmethod
+import urllib.error
 
 
 # Do not trade if the last successful call of scrape() was older than this
@@ -58,12 +59,13 @@ class BaseEngine(ABC):
 
     def trade_loop(self, log_trade: Callable[[TradeInfo], None], log_state: Callable[[StateLog], None]):
         time_start = self.current_time_prov()
-        self.logger.debug(f'Entering trade loop at time {time_start}')
+        self.logger.info(f'Entering trade loop.')
 
-        log_state(StateLog(time_start, self.pos_impact_state))
+        log_state(StateLog(time_start, self.prices, self.pos_impact_state))
 
         if (time_start - self.last_market_state_update).total_seconds() > LAG_TRADE_LIMIT_SECONDS:
             self.logger.error('Error the market data is stale, skipping trading loop entirely')
+            return
 
         for asset_id in self.asset_ids:
 
@@ -103,12 +105,20 @@ class BaseEngine(ABC):
 
             if opt_swap_quote is not None:
 
-                timed_swap_quote = TimedSwapQuote(time_opt, opt_swap_quote)
+                timed_swap_quote = TimedSwapQuote(time_opt, opt_swap_quote,
+                                                  mualgo_reserves_at_opt=current_mualgo_reserves,
+                                                  asa_reserves_at_opt=current_asa_reserves)
 
                 validate_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves,
                               self.pos_impact_state, asset_id, timed_swap_quote.time)
 
-                maybe_swap: MaybeTradedSwap = self.swapper[asset_id].attempt_transaction(timed_swap_quote)
+                try:
+                    maybe_swap: MaybeTradedSwap = self.swapper[asset_id].attempt_transaction(timed_swap_quote)
+
+                except urllib.error.URLError as e:
+                    self.logger.critical(f'Transaction for asset {asset_id} failed with urllib.error.URLError: {str(e)}')
+                    continue
+
                 time_since_start = lag_ms(maybe_swap.time - time_start)
                 time_since_opt = lag_ms(maybe_swap.time - timed_swap_quote.time)
 
@@ -145,5 +155,5 @@ class BaseEngine(ABC):
 
         time_end = self.current_time_prov()
         dt = lag_ms(time_end - time_start)
-        self.logger.debug(f'Exiting trade loop {dt} ms after entering.')
+        self.logger.info(f'Exiting trade loop {dt} ms after entering.')
 

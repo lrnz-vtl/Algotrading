@@ -4,6 +4,7 @@ import numpy as np
 from algo.trading.swapper import AlgoPoolSwap, RedeemedAmounts
 from algo.trading.costs import FIXED_FEE_MUALGOS
 import pandas as pd
+from algo.blockchain.stream import PoolState
 
 # Leading order Taylor expansions of the functions below
 impact_deflection_bps_perfraction = 2.0
@@ -122,10 +123,12 @@ class ASAPositionImpactLog:
 class StateLog:
     time: datetime.datetime
     asa_states: dict[int, ASAPositionImpactLog]
+    asa_prices: dict[int, float]
     mualgo_position: int
 
-    def __init__(self, time: datetime.datetime, state: GlobalPositionAndImpactState):
+    def __init__(self, time: datetime.datetime, asa_prices: dict[int, PoolState], state: GlobalPositionAndImpactState):
+        self.asa_prices = {aid: x.asset2_reserves / x.asset1_reserves for aid, x in asa_prices.items()}
         self.time = time
         self.asa_states = {aid: ASAPositionImpactLog(x.asa_position.value, x.impact.state) for aid, x in
-                       state.asa_states.items()}
+                           state.asa_states.items()}
         self.mualgo_position = state.mualgo_position

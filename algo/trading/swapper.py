@@ -75,6 +75,8 @@ class MaybeTradedSwap:
 class TimedSwapQuote:
     time: datetime.datetime
     quote: SwapQuote
+    mualgo_reserves_at_opt: int
+    asa_reserves_at_opt: int
 
 
 @dataclass
@@ -94,7 +96,7 @@ class Swapper(ABC):
 
 
 class ProductionSwapper(Swapper):
-    def __init__(self, aid: int, client: TinymanClient, address: str, key: str):
+    def __init__(self, aid: int, client: TinymanClient, address: str, key: str, refresh_prices: bool):
         self.pool = client.fetch_pool(aid, 0)
         self.address = address
         self.aid = aid
@@ -103,6 +105,7 @@ class ProductionSwapper(Swapper):
         self.client = client
         assert self.pool.exists
         self._asset_optin()
+        self.refresh_prices = refresh_prices
 
     def _client_optin(self):
         if not self.client.is_opted_in():
@@ -130,6 +133,14 @@ class ProductionSwapper(Swapper):
         self.logger.info(f'Opted into asset, {res}')
 
     def attempt_transaction(self, quote: TimedSwapQuote) -> MaybeTradedSwap:
+
+        if self.refresh_prices:
+            self.pool.refresh()
+            if self.pool.asset1_reserves != quote.asa_reserves_at_opt or self.pool.asset2_reserves != quote.mualgo_reserves_at_opt:
+                self.logger.warning(f'Refreshed (ASA, Algo) reserves are different from those at optimisation'
+                                    f'\n ({self.pool.asset1_reserves, self.pool.asset2_reserves}) != '
+                                    f'({quote.asa_reserves_at_opt, quote.mualgo_reserves_at_opt})')
+
         transaction_group = self.pool.prepare_swap_transactions_from_quote(quote.quote)
         transaction_group.sign_with_private_key(self.address, self.key)
         res = self.client.submit(transaction_group)
@@ -139,8 +150,8 @@ class ProductionSwapper(Swapper):
         return MaybeTradedSwap(
             AlgoPoolSwap(
                 asset_buy=quote.quote.amount_out.asset.id,
-                amount_buy=quote.quote.amount_out_with_slippage.amount,
-                amount_sell=quote.quote.amount_in_with_slippage.amount,
+                amount_buy=quote.quote.amount_out.amount,
+                amount_sell=quote.quote.amount_in.amount,
                 amount_buy_with_slippage=quote.quote.amount_out_with_slippage.amount,
                 amount_sell_with_slippage=quote.quote.amount_in_with_slippage.amount,
                 txid=res['txid']

@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import copy
 import datetime
 import logging
 from algo.trading.trades import TradeInfo
@@ -34,7 +36,7 @@ class Simulator(BaseEngine):
         self.logger = logging.getLogger(__name__)
         self.signal_providers = signal_providers
 
-        self.initial_pos_impact_state = StateLog(None, pos_impact_state)
+        self.initial_pos_impact_state = copy.deepcopy(pos_impact_state)
         self.pos_impact_state = pos_impact_state
 
         self.simulation_step = datetime.timedelta(seconds=simulation_step_seconds)
