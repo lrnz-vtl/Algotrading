@@ -152,9 +152,12 @@ class ProductionSwapper(Swapper):
                                                                      slippage=quote.quote.slippage)
             if (quote_to_submit.amount_out.amount, quote_to_submit.amount_out_with_slippage.amount) != \
                     (quote.quote.amount_out.amount, quote.quote.amount_out_with_slippage.amount):
-                self.logger.warning('Recomputed and optimised output quotes differ:'
+                self.logger.warning('\nRecomputed and optimised output quotes differ:'
                                     f'{(quote_to_submit.amount_out.amount, quote_to_submit.amount_out_with_slippage.amount)} '
                                     f'!= {(quote.quote.amount_out.amount, quote.quote.amount_out_with_slippage.amount)}'
+                                    f'\nopt reserves: ({TimedSwapQuote.asa_reserves_at_opt}, {TimedSwapQuote.mualgo_reserves_at_opt})'
+                                    f'\nactual reserves: ({self.pool.asset1_reserves}, {self.pool.asset2_reserves})'
+                                    f'\n'
                                     )
         elif self.execution_option == ExecutionOption.REFRESH:
             self.pool.refresh()
@@ -170,7 +173,7 @@ class ProductionSwapper(Swapper):
 
         transaction_group = self.pool.prepare_swap_transactions_from_quote(quote_to_submit)
         transaction_group.sign_with_private_key(self.address, self.key)
-        res = self.client.submit(transaction_group)
+        res = self.client.submit(transaction_group, wait=self.fetch_redeemable_amounts)
 
         if isinstance(transaction_group.transactions[3], algosdk.future.transaction.PaymentTxn):
             tx_out = transaction_group.transactions[3].amt
@@ -186,14 +189,16 @@ class ProductionSwapper(Swapper):
         redeemable_amount = None
         if self.fetch_redeemable_amounts:
             assert isinstance(transaction_group.transactions[1], algosdk.future.transaction.ApplicationNoOpTxn)
+            fetch_redeem_start = datetime.datetime.utcnow()
             t = self.client.algod.pending_transaction_info(transaction_group.transactions[1].get_txid())
+            fetch_redeem_end = datetime.datetime.utcnow()
+            self.logger.info(f'Performed fetch_redeemable_amounts in {lag_ms(fetch_redeem_end-fetch_redeem_start)} ms')
             try:
                 redeemable_amount = t['local-state-delta'][1]['delta'][0]['value']['uint']
             except KeyError as e:
                 self.logger.critical(f"txid={res['txid']}"
                                      f"\n{t}"
                                      f"\n{e}")
-                raise e
 
         time = datetime.datetime.utcnow()
         lag = lag_ms(time-time_start)
