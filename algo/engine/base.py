@@ -11,6 +11,7 @@ from algo.trading.swapper import TimedSwapQuote, MaybeTradedSwap, Swapper
 from tinyman.v1.pools import SwapQuote
 from abc import ABC, abstractmethod
 import urllib.error
+import algosdk
 
 
 # Do not trade if the last successful call of scrape() was older than this
@@ -116,7 +117,13 @@ class BaseEngine(ABC):
                     maybe_swap: MaybeTradedSwap = self.swapper[asset_id].attempt_transaction(timed_swap_quote)
 
                 except urllib.error.URLError as e:
-                    self.logger.critical(f'Transaction for asset {asset_id} failed with urllib.error.URLError: {str(e)}')
+                    self.logger.critical(f'Transaction for asset {asset_id} failed with urllib.error.URLError: {str(e)}'
+                    )
+                    continue
+                except algosdk.error.AlgodHTTPError as e:
+                    self.logger.critical(
+                        f'Transaction for asset {asset_id} failed with algosdk.error.AlgodHTTPError, code={e.code}: {str(e)}'
+                    )
                     continue
 
                 time_since_start = lag_ms(maybe_swap.time - time_start)

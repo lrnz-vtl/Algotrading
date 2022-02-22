@@ -8,6 +8,8 @@ from algo.trading.costs import TradeCostsOther, TradeCostsMualgo
 from algo.trading.trades import TradeInfo, TradeRecord
 import datetime
 from tinyman.v1.optin import prepare_asset_optin_transactions
+import algosdk
+from enum import Enum
 
 # Max amount of Algo left locked in a pool
 MAX_VALUE_LOCKED_ALGOS = 1
@@ -25,6 +27,7 @@ class AlgoPoolSwap:
     amount_buy_with_slippage: int
     amount_sell_with_slippage: int
     txid: str
+    redeemable_amount: Optional[dict[int, int]]
 
     def make_costs(self, current_asa_reserves: int, current_mualgo_reserves: int,
                    impact_before_trade: float) -> TradeCostsMualgo:
@@ -95,8 +98,15 @@ class Swapper(ABC):
         pass
 
 
+class ExecutionOption(Enum):
+    NO_REFRESH = 1
+    REFRESH = 2
+    REFRESH_AND_RECOMPUTE = 3
+
+
 class ProductionSwapper(Swapper):
-    def __init__(self, aid: int, client: TinymanClient, address: str, key: str, refresh_prices: bool):
+    def __init__(self, aid: int, client: TinymanClient, address: str, key: str, execution_option: ExecutionOption,
+                 fetch_redeemable_amounts: bool):
         self.pool = client.fetch_pool(aid, 0)
         self.address = address
         self.aid = aid
@@ -105,7 +115,8 @@ class ProductionSwapper(Swapper):
         self.client = client
         assert self.pool.exists
         self._asset_optin()
-        self.refresh_prices = refresh_prices
+        self.execution_option = execution_option
+        self.fetch_redeemable_amounts = fetch_redeemable_amounts
 
     def _client_optin(self):
         if not self.client.is_opted_in():
@@ -134,18 +145,60 @@ class ProductionSwapper(Swapper):
 
     def attempt_transaction(self, quote: TimedSwapQuote) -> MaybeTradedSwap:
 
-        if self.refresh_prices:
+        time_start = datetime.datetime.utcnow()
+
+        if self.execution_option == ExecutionOption.REFRESH_AND_RECOMPUTE:
+            quote_to_submit = self.pool.fetch_fixed_input_swap_quote(amount_in=quote.quote.amount_in,
+                                                                     slippage=quote.quote.slippage)
+            if (quote_to_submit.amount_out.amount, quote_to_submit.amount_out_with_slippage.amount) != \
+                    (quote.quote.amount_out.amount, quote.quote.amount_out_with_slippage.amount):
+                self.logger.warning('Recomputed and optimised output quotes differ:'
+                                    f'{(quote_to_submit.amount_out.amount, quote_to_submit.amount_out_with_slippage.amount)} '
+                                    f'!= {(quote.quote.amount_out.amount, quote.quote.amount_out_with_slippage.amount)}'
+                                    )
+        elif self.execution_option == ExecutionOption.REFRESH:
             self.pool.refresh()
+            quote_to_submit = quote.quote
+        else:
+            quote_to_submit = quote.quote
+
+        if self.execution_option in [ExecutionOption.REFRESH, ExecutionOption.REFRESH_AND_RECOMPUTE]:
             if self.pool.asset1_reserves != quote.asa_reserves_at_opt or self.pool.asset2_reserves != quote.mualgo_reserves_at_opt:
                 self.logger.warning(f'Refreshed (ASA, Algo) reserves are different from those at optimisation'
                                     f'\n ({self.pool.asset1_reserves, self.pool.asset2_reserves}) != '
                                     f'({quote.asa_reserves_at_opt, quote.mualgo_reserves_at_opt})')
 
-        transaction_group = self.pool.prepare_swap_transactions_from_quote(quote.quote)
+        transaction_group = self.pool.prepare_swap_transactions_from_quote(quote_to_submit)
         transaction_group.sign_with_private_key(self.address, self.key)
         res = self.client.submit(transaction_group)
 
+        if isinstance(transaction_group.transactions[3], algosdk.future.transaction.PaymentTxn):
+            tx_out = transaction_group.transactions[3].amt
+        elif isinstance(transaction_group.transactions[3], algosdk.future.transaction.AssetTransferTxn):
+            tx_out = transaction_group.transactions[3].amount
+        else:
+            raise TypeError(f'transaction_group.transactions[3] should be PaymentTxn or AssetTransferTxn but is '
+                            f'{type(transaction_group.transactions[3])}')
+        if tx_out != quote_to_submit.amount_out_with_slippage:
+            self.logger.warning(
+                f'tx_out != quote_to_submit.amount_out_with_slippage, {tx_out} != {quote_to_submit.amount_out_with_slippage}')
+
+        redeemable_amount = None
+        if self.fetch_redeemable_amounts:
+            assert isinstance(transaction_group.transactions[1], algosdk.future.transaction.ApplicationNoOpTxn)
+            t = self.client.algod.pending_transaction_info(transaction_group.transactions[1].get_txid())
+            try:
+                redeemable_amount = t['local-state-delta'][1]['delta'][0]['value']['uint']
+            except KeyError as e:
+                self.logger.critical(f"txid={res['txid']}"
+                                     f"\n{t}"
+                                     f"\n{e}")
+                raise e
+
         time = datetime.datetime.utcnow()
+        lag = lag_ms(time-time_start)
+
+        self.logger.info(f'Performed transaction in {lag} ms')
 
         return MaybeTradedSwap(
             AlgoPoolSwap(
@@ -154,7 +207,8 @@ class ProductionSwapper(Swapper):
                 amount_sell=quote.quote.amount_in.amount,
                 amount_buy_with_slippage=quote.quote.amount_out_with_slippage.amount,
                 amount_sell_with_slippage=quote.quote.amount_in_with_slippage.amount,
-                txid=res['txid']
+                txid=res['txid'],
+                redeemable_amount=redeemable_amount
             ),
             time=time
         )
@@ -182,11 +236,15 @@ class ProductionSwapper(Swapper):
                 raise ValueError
 
             if algo_value > MAX_VALUE_LOCKED_ALGOS:
-                transaction_group = self.pool.prepare_redeem_transactions(amount)
+                transaction_group = self.pool.prepare_redeem_transactions(asset_amount)
                 transaction_group.sign_with_private_key(self.address, self.key)
                 result = self.client.submit(transaction_group, wait=True)
-                if result['pool_error'] != '':
-                    self.logger.error(f"Redemption may have failed with errror {result['pool_error']}")
+                try:
+                    if result['pool_error'] != '':
+                        self.logger.error(f"Redemption may have failed with errror {result['pool_error']}")
+                except KeyError as e:
+                    self.logger.critical(f'result={result}')
+                    raise e
                 self.logger.info(f'Redeemed {asset_amount} from pool {self.aid}, result={result}')
 
                 if asset.id == 0:
@@ -213,7 +271,8 @@ class SimulationSwapper(Swapper):
                 amount_sell=quote.quote.amount_in.amount,
                 amount_buy_with_slippage=quote.quote.amount_out_with_slippage.amount,
                 amount_sell_with_slippage=quote.quote.amount_in_with_slippage.amount,
-                txid=""
+                txid="",
+                redeemable_amount=None
             ),
             time=quote.time
         )
