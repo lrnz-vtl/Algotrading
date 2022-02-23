@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 from algo.blockchain.process_volumes import PoolTransaction, Swap, is_fee_payment
 from algo.blockchain.process_prices import PoolState, get_pool_state_txn
@@ -40,9 +41,9 @@ class StreamException(Exception):
 
 class DataStream:
     def __init__(self, universe: SimpleUniverse, query_params: QueryParams, next_token: Optional[str] = None):
-
-        self.universe = universe
-        self.pools = {x.address for x in universe.pools}
+        if universe:
+            self.universe = universe
+            self.pools = {x.address for x in universe.pools}
         self.url = f'https://algoindexer.algoexplorerapi.io/v2/transactions'
         self.params = query_params.make_params()
         if next_token:
@@ -50,6 +51,13 @@ class DataStream:
 
         self.logger = logging.getLogger(__name__)
 
+    @staticmethod
+    def from_address(address: str, query_params: QueryParams) -> DataStream:
+        datastream = DataStream(None, query_params)
+        datastream.params['address'] = address
+        datastream.pools = {address}
+        return datastream
+    
     def next_transaction(self):
 
         with requests.session() as session:
