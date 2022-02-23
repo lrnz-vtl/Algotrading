@@ -11,6 +11,7 @@ import datetime
 from datetime import timezone
 import numpy as np
 from algo.blockchain.utils import int_to_tzaware_utc_datetime
+import json
 
 
 def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: int):
@@ -30,6 +31,11 @@ def get_pool_transaction_txn(tx: dict, pool_address: str, key: str, asset_id: in
     amount = sign * tx[key]['amount']
     block = tx['confirmed-round']
     return PoolTransaction(amount, asset_id, block, counterparty, tx['tx-type'], tx['round-time'])
+
+
+class StreamException(Exception):
+    def __init__(self, msg):
+        super().__init__(msg)
 
 
 class DataStream:
@@ -52,7 +58,20 @@ class DataStream:
                 self.logger.debug('Making new request')
                 req1 = session.get(url=self.url, params=self.params)
 
-                req = req1.json()
+                if not req1.ok:
+                    self.logger.critical("session.get response is not OK"
+                                         f"\n url = {self.url}")
+                    raise StreamException("Response not OK")
+
+                try:
+                    req = req1.json()
+                except json.decoder.JSONDecodeError as e:
+                    self.logger.critical(f"req1.json() failed: "
+                                         f"\n req1 = {req1}"
+                                         f"\n {e.msg}"
+                                         f"\n url = {self.url}"
+                                         )
+                    raise StreamException("json.decoder.JSONDecodeError")
 
                 first_time = None
                 if req['transactions']:

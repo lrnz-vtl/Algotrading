@@ -86,14 +86,20 @@ class PriceScraper(DataScraper):
     async def scrape(self, session: aiohttp.ClientSession,
                      timestamp_min: Optional[int],
                      query_params: QueryParams,
-                     num_queries: Optional[int] = None):
+                     num_queries: Optional[int] = None,
+                     filter_tx_type: bool = True):
         prev_time = None
         prev_reverse_order_in_block = None
 
         self.logger.debug(f'Started scraping price for assets {self.assets}')
 
+        params = {'address': self.address}
+        # This does not work anymore
+        if filter_tx_type:
+            params['tx-type'] = 'appl'
+
         async for tx in query_transactions(session=session,
-                                           params={'address': self.address, 'tx-type': 'appl'},
+                                           params=params,
                                            num_queries=num_queries,
                                            query_params=query_params):
 

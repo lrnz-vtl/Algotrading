@@ -1,6 +1,9 @@
 import datetime
 import logging
 from typing import Optional
+
+from tinyman.assets import Asset
+
 from algo.trading.impact import PositionAndImpactState, ASAImpactState
 from algo.trading.costs import FIXED_FEE_MUALGOS, FEE_BPS, EXPECTED_SLIPPAGE_BPS, reserves_to_avg_impact_cost_coef
 from algo.optimizer.base import BaseOptimizer, OptimizedBuy, RESERVE_PERCENTAGE_CAP, OptimalSwap, AssetType
@@ -65,19 +68,25 @@ def optimal_amount_buy_asa(signal_bps: float,
 
 class OptimizerV2(BaseOptimizer):
 
-    def __init__(self, asset1: int, risk_coef: float):
+    def __init__(self, asset1: Asset, asset2: Asset, risk_coef: float):
         self._asset1 = asset1
+        self._asset2 = asset2
         self.risk_coef = risk_coef
-        assert self.asset1 > 0
+        assert self.asset1.id > 0
+        assert self.asset2.id == 0
         self.logger = logging.getLogger(__name__)
 
     @staticmethod
-    def make(asset1: int, risk_coef: float) -> BaseOptimizer:
-        return OptimizerV2(asset1, risk_coef)
+    def make(asset1: Asset, asset2: Asset, risk_coef: float) -> BaseOptimizer:
+        return OptimizerV2(asset1, asset2, risk_coef)
 
     @property
-    def asset1(self) -> int:
+    def asset1(self) -> Asset:
         return self._asset1
+
+    @property
+    def asset2(self) -> Asset:
+        return self._asset2
 
     def optimal_amount_swap(self, signal_bps: float,
                             impact_bps: float,
@@ -114,13 +123,11 @@ class OptimizerV2(BaseOptimizer):
                                                     is_buy=False
                                                     )
 
-        if not (optimized_asa_buy is None or optimized_asa_sell is None):
-            self.logger.error(f"Both buy and sell at time {t}")
-        # FIXME
         assert optimized_asa_buy is None or optimized_asa_sell is None, f"{optimized_asa_buy}, {optimized_asa_sell}"
 
         if optimized_asa_sell is not None:
-            optimized_algo_buy = OptimizedBuy(int(optimized_asa_sell.amount * asa_price_mualgo), int(optimized_asa_sell.min_profitable_amount * asa_price_mualgo))
+            optimized_algo_buy = OptimizedBuy(int(optimized_asa_sell.amount * asa_price_mualgo),
+                                              int(optimized_asa_sell.min_profitable_amount * asa_price_mualgo))
             return OptimalSwap(AssetType.ALGO, optimized_algo_buy)
         elif optimized_asa_buy is not None:
             return OptimalSwap(AssetType.OTHER, optimized_asa_buy)

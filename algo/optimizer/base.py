@@ -89,12 +89,17 @@ class BaseOptimizer(ABC):
 
     @property
     @abstractmethod
-    def asset1(self) -> int:
+    def asset1(self) -> Asset:
+        pass
+
+    @property
+    @abstractmethod
+    def asset2(self) -> Asset:
         pass
 
     @staticmethod
     @abstractmethod
-    def make(asset1: int, risk_coef: float) -> BaseOptimizer:
+    def make(asset1: Asset, asset2: Asset, risk_coef: float) -> BaseOptimizer:
         pass
 
     @abstractmethod
@@ -124,19 +129,19 @@ class BaseOptimizer(ABC):
 
             if optimal_swap.asset_buy == AssetType.ALGO:
                 # What we sell
-                asset_in = Asset(self.asset1)
+                asset_in = self.asset1
                 input_supply = current_asa_reserves
                 output_supply = current_mualgo_reserves
                 sell_amount_available = current_asa_position
 
             else:
                 # What we sell
-                asset_in = Asset(0)
+                asset_in = self.asset2
                 input_supply = current_mualgo_reserves
                 output_supply = current_asa_reserves
                 # FIXME What should we subtract here?
                 sell_amount_available = min(
-                    current_mualgo_position - 2*FIXED_FEE_MUALGOS,
+                    current_mualgo_position - 2 * FIXED_FEE_MUALGOS,
                     int(current_mualgo_position * MAX_PERCENTAGE_ALGO_SELL)
                 )
 
@@ -149,8 +154,7 @@ class BaseOptimizer(ABC):
 
             def asset_in_from_asset_out(asset_out_amount):
                 calculated_amount_in_without_fee = (k / (output_supply - asset_out_amount)) - input_supply
-                asset_in_amount = int(calculated_amount_in_without_fee * 1000 / 997)
-                return asset_in_amount
+                return int(calculated_amount_in_without_fee * 1000 / 997)
 
             # What we buy
             optimal_asset_out_amount = optimal_swap.optimised_buy.amount
@@ -162,12 +166,12 @@ class BaseOptimizer(ABC):
             if sell_amount_available <= minimal_asset_in_amount:
                 return None
 
-            asset_in_amount = min(optimal_asset_in_amount, sell_amount_available)
+            asset_in_amount = int(min(optimal_asset_in_amount, sell_amount_available))
 
             assert asset_in_amount <= sell_amount_available
 
             if asset_in_amount > 0:
-                quote = fetch_fixed_input_swap_quote(Asset(self.asset1), Asset(0),
+                quote = fetch_fixed_input_swap_quote(self.asset1, self.asset2,
                                                      current_asa_reserves, current_mualgo_reserves,
                                                      AssetAmount(asset_in, asset_in_amount), slippage)
 

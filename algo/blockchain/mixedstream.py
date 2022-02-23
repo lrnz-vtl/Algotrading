@@ -12,14 +12,18 @@ from algo.universe.universe import SimpleUniverse
 import datetime
 import uvloop
 
+
 class PriceStreamer:
     def __init__(self,
                  universe: SimpleUniverse,
                  client: TinymanClient,
-                 date_min: datetime.datetime):
+                 date_min: datetime.datetime,
+                 filter_tx_type: bool = True):
         self.client = client
         self.pools = [(x.asset1_id, x.asset2_id) for x in universe.pools]
         self.date_min = date_min
+
+        self.filter_tx_type = filter_tx_type
 
         self.data: list[PriceUpdate] = []
 
@@ -48,22 +52,25 @@ class PriceStreamer:
         async for pool_state in scraper.scrape(session=session,
                                                num_queries=None,
                                                timestamp_min=None,
-                                               query_params=QueryParams(after_time=self.date_min)):
+                                               query_params=QueryParams(after_time=self.date_min),
+                                               filter_tx_type=self.filter_tx_type):
             self.data.append(PriceUpdate(asset_ids=(max(assets), min(assets)), price_update=pool_state))
 
 
 class MixedPriceStreamer:
-    def __init__(self, universe: SimpleUniverse, date_min: datetime.datetime, client: TinymanClient):
+    def __init__(self, universe: SimpleUniverse, date_min: datetime.datetime, client: TinymanClient,
+                 filter_tx_type: bool = True):
 
         self.universe = universe
         self.pvs = None
         self.date_min = date_min
         self.client = client
+        self.filter_tx_type = filter_tx_type
 
     def scrape(self):
         if not self.pvs:
             max_block = -1
-            ps = PriceStreamer(self.universe, self.client, date_min=self.date_min)
+            ps = PriceStreamer(self.universe, self.client, date_min=self.date_min, filter_tx_type=self.filter_tx_type)
             for x in ps.load():
                 yield x
                 assert x.price_update.block >= max_block
@@ -73,4 +80,3 @@ class MixedPriceStreamer:
             self.pvs = PriceVolumeStream(ds)
         else:
             yield from only_price(self.pvs.scrape())
-

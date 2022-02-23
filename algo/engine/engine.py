@@ -5,7 +5,7 @@ from algo.trading.impact import GlobalPositionAndImpactState, StateLog, Position
     ASAPosition
 from algo.optimizer.base import BaseOptimizer
 from algo.trading.signalprovider import PriceSignalProvider
-from algo.blockchain.stream import PoolState, PriceUpdate
+from algo.blockchain.stream import PoolState, PriceUpdate, StreamException
 from algo.universe.universe import SimpleUniverse
 from typing import Callable, Generator, Any, Type, Optional
 from algo.trading.swapper import Swapper
@@ -28,8 +28,7 @@ class Engine(BaseEngine):
                  marketupdate_step_seconds: int,
                  syncpositions_step_seconds: int,
                  redeem_step_seconds: int,
-                 risk_coef: float,
-                 optimizer_cls: Type[BaseOptimizer],
+                 make_optimizer: Callable[[int], BaseOptimizer],
                  make_swapper: Callable[[int], Swapper],
                  make_signal_provider: Callable[[int], PriceSignalProvider],
                  slippage: float,
@@ -40,8 +39,10 @@ class Engine(BaseEngine):
         self.slippage = slippage
         self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
-        self.optimizers: dict[int, BaseOptimizer] = {asset_id: optimizer_cls.make(asset1=asset_id, risk_coef=risk_coef)
-                                                     for asset_id in self.asset_ids}
+
+        self.swapper = {aid: make_swapper(aid) for aid in self.asset_ids}
+
+        self.optimizers: dict[int, BaseOptimizer] = {asset_id: make_optimizer(asset_id) for asset_id in self.asset_ids}
         self.logger = logging.getLogger(__name__)
 
         self.trading_step_seconds = trading_step_seconds
@@ -56,7 +57,7 @@ class Engine(BaseEngine):
 
         self.last_market_state_update: datetime.datetime = None
 
-        self.swapper = {aid: make_swapper(aid) for aid in self.asset_ids}
+
         self.address = address
         self.pos_impact_state: Optional[GlobalPositionAndImpactState] = None
         self.decay_impact_seconds = decay_impact_seconds
@@ -103,6 +104,8 @@ class Engine(BaseEngine):
 
         except requests.exceptions.ConnectionError as e:
             self.logger.error(f'Price scraping in sync_market_state failed with ConnectionError: {e}')
+        except StreamException as e:
+            self.logger.error(f'Price scraping in sync_market_state failed with StreamException: {e}')
 
     def redeem_amounts(self) -> None:
 
@@ -146,6 +149,7 @@ class Engine(BaseEngine):
                     self.logger.warning(
                         f"Actual and tracked ASA ({aid}) positions differ: {amount} vs {self.pos_impact_state.asa_states[aid].asa_position.value}")
                 self.pos_impact_state.asa_states[aid].asa_position.value = amount
+                assert self.pos_impact_state.asa_states[aid].asa_position.value == amount, f"{self.pos_impact_state.asa_states[aid].asa_position.value}, {amount}"
             else:
                 self.logger.debug(f'aid {aid} in our portfolio but not in this universe')
 

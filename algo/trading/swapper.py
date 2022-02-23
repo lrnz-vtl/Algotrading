@@ -155,9 +155,10 @@ class ProductionSwapper(Swapper):
                 self.logger.warning('\nRecomputed and optimised output quotes differ:'
                                     f'{(quote_to_submit.amount_out.amount, quote_to_submit.amount_out_with_slippage.amount)} '
                                     f'!= {(quote.quote.amount_out.amount, quote.quote.amount_out_with_slippage.amount)}'
-                                    f'\nopt reserves: ({TimedSwapQuote.asa_reserves_at_opt}, {TimedSwapQuote.mualgo_reserves_at_opt})'
+                                    f'\nopt reserves: ({quote.asa_reserves_at_opt}, {quote.mualgo_reserves_at_opt})'
                                     f'\nactual reserves: ({self.pool.asset1_reserves}, {self.pool.asset2_reserves})'
-                                    f'\n'
+                                    f'\nquote={quote.quote}'
+                                    f'\nquote_to_submit={quote_to_submit}'
                                     )
         elif self.execution_option == ExecutionOption.REFRESH:
             self.pool.refresh()
@@ -233,10 +234,8 @@ class ProductionSwapper(Swapper):
 
             if asset.id == 0:
                 algo_value = amount / (10 ** 6)
-                ret.mualgo_amount = amount
             elif asset.id == self.aid:
                 algo_value = amount * asa_price / (10 ** 6)
-                ret.asa_amount = amount
             else:
                 raise ValueError
 
@@ -245,8 +244,8 @@ class ProductionSwapper(Swapper):
                 transaction_group.sign_with_private_key(self.address, self.key)
                 result = self.client.submit(transaction_group, wait=True)
                 try:
-                    if result['pool_error'] != '':
-                        self.logger.error(f"Redemption may have failed with errror {result['pool_error']}")
+                    if result['pool-error'] != '':
+                        self.logger.error(f"Redemption may have failed with error {result['pool-error']}")
                 except KeyError as e:
                     self.logger.critical(f'result={result}')
                     raise e
