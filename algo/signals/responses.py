@@ -5,6 +5,8 @@ from scipy.stats.mstats import winsorize
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 @dataclass
@@ -56,8 +58,34 @@ class SimpleResponse(LookaheadResponse):
         prices = price.to_frame().join(time_forward, rsuffix='_forward').join(start_time_forward, rsuffix='_start')
         resp = (prices['price_forward'] - prices['price_start']) / prices['price_start']
 
-        resp_winsor = resp.copy()
-        mask = ~np.isnan(resp_winsor)
-        resp_winsor[mask] = winsorize(resp_winsor[mask], limits=(0.05, 0.05))
+        return resp
 
-        return resp_winsor
+
+class WinsorizeResponse:
+    def __init__(self, pipeline):
+        self.pipeline = pipeline
+
+    def fit(self, X, y, **kwargs):
+        resp = y.copy()
+        mask = ~np.isnan(resp)
+        resp[mask] = winsorize(resp[mask], limits=(0.05, 0.05))
+        self.pipeline.fit(X, resp, **kwargs)
+        return self
+
+    def fit_transform(self, X, y, **kwargs):
+        self.pipeline = self.fit(X, y, **kwargs)
+        return self.transform(X)
+
+    def fit_predict(self, X, y, **kwargs):
+        self.pipeline = self.fit(X, y, **kwargs)
+        return self.predict(X)
+
+    def __getattr__(self, attr):
+        if attr == 'fit':
+            return self.fit
+        elif attr == 'fit_predict':
+            return self.fit_predict
+        elif attr == 'fit_transform':
+            return self.fit_transform
+        else:
+            return getattr(self.pipeline, attr)

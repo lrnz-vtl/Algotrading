@@ -1,9 +1,11 @@
 import logging
 from matplotlib import pyplot as plt
 import unittest
-from algo.signals.evaluation import AnalysisDataStore, ASSET_INDEX_NAME
+from algo.signals.datastore import AnalysisDataStore, RollingLiquidityFilter
+from algo.signals.evaluation import *
 from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
-from algo.signals.responses import SimpleResponse
+from algo.signals.responses import SimpleResponse, WinsorizeResponse
+from algo.signals.weights import SimpleWeightMaker
 from sklearn.linear_model import LinearRegression
 from algo.universe.universe import SimpleUniverse
 
@@ -12,52 +14,43 @@ class TestAnalysisDs(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         price_cache = '20220209_prehack'
-        volume_cache = '20220209_prehack'
+        # volume_cache = '20220209_prehack'
         smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack'
-        filter_liq = 10000
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        ffill_price_minutes = 10
 
         universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
 
-        self.ds = AnalysisDataStore(price_cache, volume_cache, universe, filter_liq)
+        self.ds = AnalysisDataStore(price_cache, None, universe, SimpleWeightMaker(),
+                                    ffill_price_minutes=ffill_price_minutes)
 
-        minutes = (30, 60, 120)
-        self.featurizers = [MAPriceFeaturizer(m) for m in minutes]
+        self.minutes = (30, 60, 120)
+        self.featurizers = [MAPriceFeaturizer(m) for m in self.minutes]
+
+        respMaker = SimpleResponse(120, 5)
+        features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
+        response = self.ds.make_response(respMaker)
+
+        self.fitds = self.ds.make_fittable_data(features, response, [RollingLiquidityFilter()], [], True)
 
         super().__init__(*args, **kwargs)
 
     def test_features(self):
-        respMaker = SimpleResponse(30)
-        response = self.ds.make_response(respMaker)
+        cols = len(self.featurizers)
+        f, axs = plt.subplots(1, cols, figsize=(4 * cols, 5))
 
-        f, axs = plt.subplots(1, 3, figsize=(10, 5))
-
-        for featurizer, ax in zip(self.featurizers, axs):
-            betas = self.ds.eval_feature(self.ds.make_asset_features(featurizer), response)
-
+        for betas, ax, minutes in zip(self.fitds.bootstrap_betas(), axs, self.minutes):
             ax.hist(betas)
-            ax.set_title(f'minutes = {featurizer.minutes}')
+            ax.set_title(f'minutes = {minutes}')
             ax.grid()
         plt.show();
 
-    def test_model(self):
-        respMaker = SimpleResponse(30)
-        response = self.ds.make_response(respMaker)
+    def test_fit_and_validate_model(self):
+        model = WinsorizeResponse(LinearRegression())
 
-        features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
-        model = LinearRegression()
-        self.ds.eval_model(model, features, response, filter_nans=True)
+        train_idx, test_idx = self.fitds.make_train_val_splits()
+        self.fitds.fit_and_eval_model(model, train_idx, test_idx)
 
-        print(f'betas = {model.coef_}')
-
-    def test_model_5minlag(self):
-        respMaker = SimpleResponse(120, 5)
-        response = self.ds.make_response(respMaker)
-
-        features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
-        model = LinearRegression()
-        self.ds.eval_model(model, features, response, filter_nans=True)
-
-        print(f'betas = {model.coef_}')
+        self.logger.info(f'betas = {model.coef_}')

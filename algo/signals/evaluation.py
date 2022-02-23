@@ -3,14 +3,10 @@ import pandas as pd
 import datetime
 import numpy as np
 from matplotlib import pyplot as plt
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
-from algo.strategy.analytics import process_market_df, make_weights
-from typing import Optional
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
-from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
-from algo.universe.universe import SimpleUniverse
+from algo.signals.responses import ComputedLookaheadResponse
 from sklearn.decomposition import PCA
 
 
@@ -25,160 +21,115 @@ def not_nan_mask(*vecs):
     return ~np.any([any_axis_1(np.isnan(x)) for x in vecs], axis=0)
 
 
-class AnalysisDataStore:
+def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
+    logger = logging.getLogger(__name__)
 
-    def __init__(self, price_cache: str, volume_cache: str, universe: SimpleUniverse):
+    y_pred = m.predict(X_test)
+    oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
+    logger.info(f'OOS R^2 = {oos_rsq}')
 
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(level=logging.INFO)
+    sig = m.predict(X_full)
+    xxw = w_full * sig ** 2
+    xyw = w_full * sig * y_full
 
-        filter_ = make_filter_from_universe(universe)
+    asset_ids = w_full.index.get_level_values(ASSET_INDEX_NAME).unique()
+    cols = len(asset_ids)
+    f, axs = plt.subplots(1, cols, figsize=(10 * cols, 4))
 
-        dfp = load_algo_pools(price_cache, 'prices', filter_)
-        dfv = load_algo_pools(volume_cache, 'volumes', filter_)
+    for asset, ax in zip(asset_ids, axs):
+        xxw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='signal', ax=ax)
+        xyw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='response', ax=ax)
+        ax.axvline(X_test.index.get_level_values(TIME_INDEX_NAME).min(), ls='--', color='k', label='test cutoff')
+        ax.set_title(asset)
+        ax.legend()
+        ax.grid()
+    plt.show()
+    plt.clf()
 
-        df = process_market_df(dfp, dfv)
-        df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
-        assert np.all(df['asset2'] == 0)
-        df = df.drop(columns=['asset2'])
+    xxw.groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='signal')
+    xyw.groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='response')
+    plt.axvline(X_test.index.get_level_values(TIME_INDEX_NAME).min(), ls='--', color='k', label='test cutoff')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
-        asset_ids = [pool.asset1_id for pool in universe.pools]
-        assert all(pool.asset2_id == 0 for pool in universe.pools), "Need to provide a Universe with only Algo pools"
 
-        df = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
+class FittableDataStore:
 
-        df_ids = df.index.get_level_values(ASSET_INDEX_NAME).unique()
-        missing_ids = [asset_id for asset_id in asset_ids if asset_id not in df_ids]
-        if missing_ids:
-            self.logger.error(f"asset ids {missing_ids} are missing from the dataframe generated from the cache")
+    def __init__(self, features: pd.DataFrame, response: ComputedLookaheadResponse, weights: pd.Series):
+        assert np.all(features.index == response.ts.index)
+        assert np.all(features.index == weights.index)
+        assert np.all(response.ts.index == weights.index)
 
-        ws = make_weights(df)
-        weights = df[['date']].merge(ws, on=[ASSET_INDEX_NAME, 'date'], how='left')
-        weights.index = df.index
-        weights = weights['weight']
-
-        self.df = df
+        self.features = features
+        self.response = response
         self.weights = weights
 
-        assert self.df.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
-
-    def make_response(self, response_maker: LookaheadResponse) -> ComputedLookaheadResponse:
-        return response_maker(self.df['algo_price'])
+        self.logger = logging.getLogger(__name__)
 
     def bootstrap_arrays(self, n: int, *vecs):
-        assets = self.df.index.get_level_values(0).unique()
+        assets = self.weights.index.get_level_values(0).unique()
         for i in range(n):
             boot_assets = np.random.choice(assets, len(assets))
             yield tuple(
-                np.concatenate([vec[self.df.index.get_loc(boot_asset)] for boot_asset in boot_assets]) for vec in vecs)
+                np.concatenate([vec[self.weights.index.get_loc(boot_asset)] for boot_asset in boot_assets]) for vec in
+                vecs)
 
-    def make_asset_features(self, featurizer):
-        return self.df.groupby([ASSET_INDEX_NAME]).apply(lambda x: featurizer(x.droplevel(0)))
+    def bootstrap_betas(self):
 
-    def eval_feature(self, feature: pd.Series, response: ComputedLookaheadResponse):
+        for col in self.features.columns:
+            N = 100
+            betas = np.zeros(N)
 
-        N = 100
-        betas = np.zeros(N)
+            for i, (x, y, w) in enumerate(self.bootstrap_arrays(N, self.features[col], self.response.ts, self.weights)):
+                mask = not_nan_mask(x, y, w)
+                x, y, w = x[mask], y[mask], w[mask]
+                betas[i] = LinearRegression().fit(x[:, None], y, w).coef_
 
-        for i, (x, y, w) in enumerate(self.bootstrap_arrays(N, feature, response.ts, self.weights)):
-            mask = not_nan_mask(x, y, w)
-            x, y, w = x[mask], y[mask], w[mask]
-            betas[i] = LinearRegression().fit(x[:, None], y, w).coef_
+            yield betas
 
-        return betas
+    def make_train_val_splits(self, val_frac=0.33):
 
-    def make_train_val_splits(self, lookahead_time: datetime.timedelta, val_frac=0.25):
-        sorted_ts = sorted(self.df.index.get_level_values(TIME_INDEX_NAME))
+        lookahead_time = self.response.lookahead_time
+        sorted_ts = sorted(self.weights.index.get_level_values(TIME_INDEX_NAME))
 
         i = int(len(sorted_ts) * (1 - val_frac))
         first_val_ts = sorted_ts[i]
         upper_train_ts = first_val_ts - lookahead_time
 
-        train_idx = self.df.index.get_level_values(TIME_INDEX_NAME) < upper_train_ts
-        test_idx = self.df.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts
+        train_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) < upper_train_ts
+        test_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts
 
-        assert len(self.df) > train_idx.sum() + test_idx.sum()
+        assert len(self.weights) > train_idx.sum() + test_idx.sum()
         assert ~np.any(train_idx & test_idx)
 
         self.logger.info(f'Train, val size = {train_idx.sum()}, {test_idx.sum()}')
 
+        train_times = self.weights[train_idx].index.get_level_values(TIME_INDEX_NAME)
+        test_times = self.weights[test_idx].index.get_level_values(TIME_INDEX_NAME)
+        assert train_times.max() < test_times.min()
+        self.logger.info(f'Max train time = {train_times.max()}, Min test time = {test_times.min()}')
+
         return train_idx, test_idx
 
-    def _eval_fitted_model(self, m, X_test, y_test, w_test, X_full, y_full, w_full):
-        y_pred = m.predict(X_test)
-        oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
-        self.logger.info(f'OOS R^2 = {oos_rsq}')
+    def test_model(self, m, test_idx):
+        return eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
+                                 self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx])
 
-        sig = m.predict(X_full)
-        xxw = w_full * sig ** 2
-        xyw = w_full * sig * y_full
+    def fit_model(self, model, train_idx):
 
-        asset_ids = self.df.index.get_level_values(ASSET_INDEX_NAME).unique()
-        cols = len(asset_ids)
-        f, axs = plt.subplots(1, cols, figsize=(10 * cols, 4))
-
-        for asset, ax in zip(asset_ids, axs):
-            xxw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='signal', ax=ax)
-            xyw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='response', ax=ax)
-            ax.axvline(X_test.index.get_level_values(TIME_INDEX_NAME).min(), ls='--', color='k', label='test cutoff')
-            ax.set_title(asset)
-            ax.legend()
-            ax.grid()
-
-        plt.show()
-
-    def test_model(self, m, X_test, y_test, w_test):
-        return self._eval_fitted_model(m, X_test, y_test, w_test, X_test, y_test, w_test)
-
-    def fit_model(self, model, X_train, y_train, w_train):
+        X_train = self.features[train_idx]
+        y_train = self.response.ts[train_idx]
+        w_train = self.weights[train_idx]
 
         pca = PCA().fit(X_train)
         self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
 
         return model.fit(X_train, y_train, sample_weight=w_train)
 
-    def make_filter_mask(self, X, y, w, filter_nans: bool, filter_liq: Optional[int]):
-        # Filter on liquidity
-        if filter_liq is not None:
-            liq_idx = self.df['algo_reserves'] > filter_liq
-        else:
-            liq_idx = pd.Series(True, index=self.df.index)
+    def fit_and_eval_model(self, model, train_idx, test_idx):
 
-        # FIXME Does this introduce lookahead by dropping rows where the future price crashes?
-        if filter_nans:
-            nan_mask = not_nan_mask(X, y, w)
-        else:
-            nan_mask = pd.Series(True, index=self.df.index)
+        m = self.fit_model(model, train_idx)
 
-        return nan_mask & liq_idx
-
-    def fit_and_eval_model(self, model,
-                           features: pd.DataFrame,
-                           response: ComputedLookaheadResponse,
-                           filter_nans: bool,
-                           filter_liq: Optional[int]
-                           ):
-
-        X, y, w = features, response.ts, self.weights
-
-        train_idx, test_idx = self.make_train_val_splits(response.lookahead_time)
-
-        mask = self.make_filter_mask(X, y, w, filter_nans, filter_liq)
-
-        train_idx = train_idx & mask
-        test_idx = test_idx & mask
-
-        self.logger.info(f'Train, val size after removing NaNs and low liquidity = {train_idx.sum()}, {test_idx.sum()}')
-
-        X_full, y_full, w_full = X[mask], y[mask], w[mask]
-        X_train, y_train, w_train = X[train_idx], y[train_idx], w[train_idx]
-        X_test, y_test, w_test = X[test_idx], y[test_idx], w[test_idx]
-
-        train_times = X_train.index.get_level_values(TIME_INDEX_NAME)
-        test_times = X_test.index.get_level_values(TIME_INDEX_NAME)
-        assert train_times.max() < test_times.min()
-        self.logger.info(f'Max train time = {train_times.max()}, Min test time = {test_times.min()}')
-
-        m = self.fit_model(model, X_train, y_train, w_train)
-
-        self._eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full)
+        eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
+                          self.features, self.response.ts, self.weights)
