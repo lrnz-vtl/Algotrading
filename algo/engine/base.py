@@ -102,7 +102,8 @@ class BaseEngine(ABC):
                                                        current_mualgo_position=self.pos_impact_state.mualgo_position,
                                                        current_asa_reserves=current_asa_reserves,
                                                        current_mualgo_reserves=current_mualgo_reserves,
-                                                       slippage=self.slippage)
+                                                       slippage=self.slippage,
+                                                       time_dbg=time_opt)
 
             if opt_swap_quote is not None:
 

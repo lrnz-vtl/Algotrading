@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pydantic import BaseModel
+from typing import Optional
 
 # TODO Check me
 _FIXED_FEE_ALGOS = 0.003
@@ -35,6 +36,7 @@ class TradeCostsMualgo(BaseModel):
     linear_impact_cost_mualgo: float
     fees_mualgo: float
     fixed_fees_mualgo: float
+    redeemable_amount: int
 
     def approx_eq_to(self, other: TradeCostsMualgo) -> bool:
         return math.isclose(self.quadratic_impact_cost_mualgo, other.quadratic_impact_cost_mualgo, rel_tol=REL_TOL) \
@@ -48,13 +50,17 @@ class TradeCostsOther:
     linear_impact_cost_other: float
     fees_other: float
     fixed_fees_other: float
+    redeemable_amount: int
 
     def __init__(self, buy_asset: int,
                  buy_amount: int,
                  buy_reserves: int,
                  buy_asset_price_other: float,
-                 asa_impact: float
+                 asa_impact: float,
+                 redeemable_amount: int
                  ):
+        self.redeemable_amount = redeemable_amount
+
         self._buy_asset = buy_asset
         self._buy_asset_price_other = buy_asset_price_other
 
@@ -90,5 +96,6 @@ class TradeCostsOther:
             quadratic_impact_cost_mualgo=self.quadratic_impact_cost_other * price,
             linear_impact_cost_mualgo=self.linear_impact_cost_other * price,
             fees_mualgo=self.fees_other * price,
-            fixed_fees_mualgo=FIXED_FEE_MUALGOS
+            fixed_fees_mualgo=FIXED_FEE_MUALGOS,
+            redeemable_amount=self.redeemable_amount
         )

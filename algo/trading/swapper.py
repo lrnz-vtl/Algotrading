@@ -27,7 +27,7 @@ class AlgoPoolSwap:
     amount_buy_with_slippage: int
     amount_sell_with_slippage: int
     txid: str
-    redeemable_amount: Optional[dict[int, int]]
+    redeemable_amount: int
 
     def make_costs(self, current_asa_reserves: int, current_mualgo_reserves: int,
                    impact_before_trade: float) -> TradeCostsMualgo:
@@ -47,7 +47,9 @@ class AlgoPoolSwap:
                                buy_amount=self.amount_buy,
                                buy_reserves=out_reserves,
                                buy_asset_price_other=price_other,
-                               asa_impact=impact_before_trade).to_mualgo_basis()
+                               asa_impact=impact_before_trade,
+                               redeemable_amount=self.redeemable_amount
+                               ).to_mualgo_basis()
 
     def make_record(self, time: datetime.datetime, asa_id: int):
         if asa_id == self.asset_buy:
@@ -114,6 +116,7 @@ class ProductionSwapper(Swapper):
         self.logger = logging.getLogger(__name__)
         self.client = client
         assert self.pool.exists
+        # self._client_optin()
         self._asset_optin()
         self.execution_option = execution_option
         self.fetch_redeemable_amounts = fetch_redeemable_amounts
@@ -196,6 +199,7 @@ class ProductionSwapper(Swapper):
             self.logger.info(f'Performed fetch_redeemable_amounts in {lag_ms(fetch_redeem_end-fetch_redeem_start)} ms')
             try:
                 redeemable_amount = t['local-state-delta'][1]['delta'][0]['value']['uint']
+                self.logger.info(f'redeemable_amount = {redeemable_amount}')
             except KeyError as e:
                 self.logger.critical(f"txid={res['txid']}"
                                      f"\n{t}"
@@ -208,11 +212,11 @@ class ProductionSwapper(Swapper):
 
         return MaybeTradedSwap(
             AlgoPoolSwap(
-                asset_buy=quote.quote.amount_out.asset.id,
-                amount_buy=quote.quote.amount_out.amount,
-                amount_sell=quote.quote.amount_in.amount,
-                amount_buy_with_slippage=quote.quote.amount_out_with_slippage.amount,
-                amount_sell_with_slippage=quote.quote.amount_in_with_slippage.amount,
+                asset_buy=quote_to_submit.amount_out.asset.id,
+                amount_buy=quote_to_submit.amount_out.amount,
+                amount_sell=quote_to_submit.amount_in.amount,
+                amount_buy_with_slippage=quote_to_submit.amount_out_with_slippage.amount,
+                amount_sell_with_slippage=quote_to_submit.amount_in_with_slippage.amount,
                 txid=res['txid'],
                 redeemable_amount=redeemable_amount
             ),

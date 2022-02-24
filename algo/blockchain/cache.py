@@ -1,7 +1,7 @@
 import logging
 import aiohttp
 from algo.blockchain.algo_requests import QueryParams
-from algo.universe.universe import SimpleUniverse, PoolIdStore
+from algo.universe.universe import PoolIdStore
 from tinyman.v1.client import TinymanClient
 from algo.blockchain.utils import datetime_to_int, generator_to_df
 import pyarrow as pa

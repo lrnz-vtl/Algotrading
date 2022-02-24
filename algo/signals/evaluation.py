@@ -67,6 +67,8 @@ class FittableDataStore:
 
         self.logger = logging.getLogger(__name__)
 
+        self.full_idx = pd.Series(True, index=self.weights.index)
+
     def bootstrap_arrays(self, n: int, *vecs):
         assets = self.weights.index.get_level_values(0).unique()
         for i in range(n):

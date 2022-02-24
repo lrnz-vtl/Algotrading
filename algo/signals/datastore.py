@@ -2,7 +2,7 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
+from algo.blockchain.utils import load_algo_pools, make_filter_from_universe, join_caches_with_priority
 from algo.strategy.analytics import process_market_df
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.weights import BaseWeightMaker
@@ -40,8 +40,8 @@ class RollingLiquidityFilter(DataFilter):
 class AnalysisDataStore:
 
     def __init__(self,
-                 price_cache: str,
-                 volume_cache: Optional[str],
+                 price_caches: list[str],
+                 volume_caches: list[str],
                  universe: SimpleUniverse,
                  weight_maker: BaseWeightMaker,
                  ffill_price_minutes: Optional[int]):
@@ -51,9 +51,9 @@ class AnalysisDataStore:
 
         filter_ = make_filter_from_universe(universe)
 
-        dfp = load_algo_pools(price_cache, 'prices', filter_)
-        if volume_cache:
-            dfv = load_algo_pools(volume_cache, 'volumes', filter_)
+        dfp = join_caches_with_priority(price_caches, 'prices', filter_)
+        if volume_caches:
+            dfv = join_caches_with_priority(volume_caches, 'volumes', filter_)
         else:
             dfv = None
 

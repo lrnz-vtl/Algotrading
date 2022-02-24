@@ -21,6 +21,9 @@ RESERVE_PERCENTAGE_CAP_TOLERANCE = 0.1
 # Max percentage of algo to sell in a single trade over our total algo holdings
 MAX_PERCENTAGE_ALGO_SELL = 0.2
 
+# Below this liquidity in the pool we don't buy (set the signal to zero if positive)
+MIN_LIQUIDITY_TO_BUY_ALGOS = 50000
+
 
 @dataclass
 class OptimizedBuy:
@@ -108,6 +111,7 @@ class BaseOptimizer(ABC):
                             current_asa_position: int,
                             current_asa_reserves: int,
                             current_mualgo_reserves: int,
+                            time_dbg: datetime.datetime
                             ) -> Optional[OptimalSwap]:
         pass
 
@@ -117,13 +121,15 @@ class BaseOptimizer(ABC):
                               current_asa_reserves: int,
                               current_mualgo_reserves: int,
                               current_mualgo_position: int,
-                              slippage: float) -> Optional[SwapQuote]:
+                              slippage: float,
+                              time_dbg: datetime.datetime) -> Optional[SwapQuote]:
 
         assert -1 <= impact_bps <= 1
 
         optimal_swap = self.optimal_amount_swap(signal_bps, impact_bps, current_asa_position,
                                                 current_asa_reserves,
-                                                current_mualgo_reserves)
+                                                current_mualgo_reserves,
+                                                time_dbg)
 
         if optimal_swap is not None:
 

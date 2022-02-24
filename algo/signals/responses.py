@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
+from pydantic import BaseModel
 
 @dataclass
 class ComputedLookaheadResponse:

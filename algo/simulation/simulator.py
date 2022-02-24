@@ -24,15 +24,15 @@ class Simulator(BaseEngine):
                  seed_time: datetime.timedelta,
                  price_stream: Generator[PriceUpdate, Any, Any],
                  simulation_step_seconds: int,
-                 risk_coef: float,
-                 optimizer_cls: Type[BaseOptimizer],
+                 make_optimizer: Callable[[int], BaseOptimizer],
                  slippage: float = 0
                  ):
 
         self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools)
-        self.optimizers = {asset_id: optimizer_cls.make(asset1=asset_id, risk_coef=risk_coef) for asset_id in
-                           self.asset_ids}
+
+        self.optimizers = {asset_id: make_optimizer(asset_id) for asset_id in self.asset_ids}
+
         self.logger = logging.getLogger(__name__)
         self.signal_providers = signal_providers
 

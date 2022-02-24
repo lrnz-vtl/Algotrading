@@ -1,12 +1,9 @@
 import datetime
 import logging
 from typing import Optional
-
 from tinyman.assets import Asset
-
-from algo.trading.impact import PositionAndImpactState, ASAImpactState
 from algo.trading.costs import FIXED_FEE_MUALGOS, FEE_BPS, EXPECTED_SLIPPAGE_BPS, reserves_to_avg_impact_cost_coef
-from algo.optimizer.base import BaseOptimizer, OptimizedBuy, RESERVE_PERCENTAGE_CAP, OptimalSwap, AssetType
+from algo.optimizer.base import BaseOptimizer, OptimizedBuy, RESERVE_PERCENTAGE_CAP, OptimalSwap, AssetType, MIN_LIQUIDITY_TO_BUY_ALGOS
 import numpy as np
 import math
 
@@ -93,7 +90,14 @@ class OptimizerV2(BaseOptimizer):
                             current_asa_position: int,
                             current_asa_reserves: int,
                             current_mualgo_reserves: int,
+                            time_dbg: datetime.datetime
                             ) -> Optional[OptimalSwap]:
+
+        below_liquidity = False
+        if current_mualgo_reserves / 10**6 < MIN_LIQUIDITY_TO_BUY_ALGOS:
+            self.logger.warning(f'{time_dbg} Pool for {self.asset1.id} is below threshold liquidity')
+            below_liquidity = True
+            signal_bps = np.clip(signal_bps, None, 0)
 
         asa_price_mualgo = current_mualgo_reserves / current_asa_reserves
 
@@ -122,6 +126,9 @@ class OptimizerV2(BaseOptimizer):
                                                     fixed_fee_mualgos=FIXED_FEE_MUALGOS,
                                                     is_buy=False
                                                     )
+
+        if below_liquidity:
+            assert optimized_asa_buy is None
 
         assert optimized_asa_buy is None or optimized_asa_sell is None, f"{optimized_asa_buy}, {optimized_asa_sell}"
 
