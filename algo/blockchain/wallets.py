@@ -5,6 +5,7 @@ from typing import Dict, Iterable, Tuple, Optional
 from algo.blockchain.algo_requests import QueryParams
 from algo.blockchain.stream import DataStream
 from algo.universe.universe import SimpleUniverse
+from algo.strategy.analytics import ffill_cols, timestamp_to_5min
 
 
 def get_asset_data(asset_id, testnet=False):
@@ -44,7 +45,7 @@ def get_account_data(address=None, testnet=False):
     return coins
 
 
-class Portfolio:
+class Wallet:
     def __init__(self, address=None, testnet=False):
         """Set up the portfolio from a wallet address"""
 
@@ -58,22 +59,36 @@ class Portfolio:
             self.address = address
             self.update()
 
-    def portfolio_value(self, price_df, after_time: Optional[datetime.date] = None, before_time: Optional[datetime.date] = None):
+    def portfolio_value(self, price_df, after_time: Optional[datetime.date] = None):
+        def fill_time(df, m):
+            keys = df.keys()
+            df['time_5min']=timestamp_to_5min(df.index)
+            all_times=[]
+            delta = df['time_5min'].max() - df['time_5min'].min()
+            for i in range(int(delta.total_seconds() / (5 * 60))):
+                all_times.append(df['time_5min'].min() + i * datetime.timedelta(seconds=5 * 60))
+            all_times = pd.Series(all_times).rename('time_5min')
+            assert len(all_times) == len(set(all_times))
+            res = ffill_cols(df, keys, m, all_times)
+            res['index']=res['time_5min'].apply(datetime.datetime.timestamp)
+            return res.set_index('index')
+            
+
         if after_time == None:
             after_time = datetime.datetime.fromtimestamp(price_df['time'].min())
-        if before_time == None:
-            before_time = datetime.datetime.fromtimestamp(price_df['time'].max())
         query_params = QueryParams(after_time=after_time)
         wallet = self.historical_numbers(query_params)
+        keys = wallet.keys()
+        wallet = fill_time(wallet, 5)
         pricedic = {}
         for (asset1, asset2), price in price_df.groupby(['asset1','asset2']):
             if asset2==0:
                 pricedic[asset1] = price
         value = []
         invalid = set()
-        for t, r in wallet.iterrows():
+        for t, r in wallet[::-1].iterrows():
             val = 0
-            for assetid in r.keys():
+            for assetid in keys:
                 if assetid==0:
                     val += r[0]
                     continue
