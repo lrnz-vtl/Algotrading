@@ -8,6 +8,8 @@ from sklearn.metrics import r2_score
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.responses import ComputedLookaheadResponse
 from sklearn.decomposition import PCA
+from algo.tools.asset_data_store import AssetDataStore, get_asset_datastore
+from tinyman.v1.client import TinymanMainnetClient
 
 
 def any_axis_1(x):
@@ -23,6 +25,7 @@ def not_nan_mask(*vecs):
 
 def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
     logger = logging.getLogger(__name__)
+    ads = get_asset_datastore()
 
     y_pred = m.predict(X_test)
     oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
@@ -40,7 +43,7 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
         xxw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='signal', ax=ax)
         xyw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='response', ax=ax)
         ax.axvline(X_test.index.get_level_values(TIME_INDEX_NAME).min(), ls='--', color='k', label='test cutoff')
-        ax.set_title(asset)
+        ax.set_title(f'{asset}, {ads.fetch_asset(asset).name}')
         ax.legend()
         ax.grid()
     plt.show()
@@ -57,6 +60,9 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
 class FittableDataStore:
 
     def __init__(self, features: pd.DataFrame, response: ComputedLookaheadResponse, weights: pd.Series):
+        client = TinymanMainnetClient()
+        self.ads = AssetDataStore(client)
+
         assert np.all(features.index == response.ts.index)
         assert np.all(features.index == weights.index)
         assert np.all(response.ts.index == weights.index)

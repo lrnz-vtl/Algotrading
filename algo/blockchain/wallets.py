@@ -1,48 +1,11 @@
 from __future__ import annotations
-import requests, logging, time, datetime, warnings
+import time, datetime, warnings
 import pandas as pd
 from typing import Dict, Iterable, Tuple, Optional
 from algo.blockchain.algo_requests import QueryParams
 from algo.blockchain.stream import DataStream
-from algo.universe.universe import SimpleUniverse
 from algo.strategy.analytics import ffill_cols, timestamp_to_5min
-
-
-def get_asset_data(asset_id, testnet=False):
-    if testnet:
-        asset = requests.get(url=f'https://testnet.algoexplorerapi.io/idx2/v2/assets/{asset_id}').json()
-    else:
-        asset = requests.get(url=f'https://algoexplorerapi.io/idx2/v2/assets/{asset_id}').json()
-    return asset['asset']
-
-
-def get_decimal(asset_id, testnet=False):
-    if testnet:
-        asset = requests.get(url=f'https://testnet.algoexplorerapi.io/idx2/v2/assets/{asset_id}').json()
-    else:
-        asset = requests.get(url=f'https://algoexplorerapi.io/idx2/v2/assets/{asset_id}').json()
-    return asset['asset']['params']['decimals']
-
-
-def get_account_data(address=None, testnet=False):
-    """Query wallet data from AlgoExplorer"""
-
-    if testnet:
-        url = f'https://testnet.algoexplorerapi.io/v2/accounts/{address}'
-    else:
-        url = f'https://algoexplorerapi.io/v2/accounts/{address}'
-
-    # as specified here https://algoexplorer.io/api-dev/v2
-    data = requests.get(url=url).json()
-
-    # set up dictionary with values for each coin
-    coins = {0: data['amount']}  # / 10 ** 6}
-    for d in data['assets']:
-        coins[d['asset-id']] = d['amount']  # / 10 ** get_decimal(d['asset-id'],testnet)
-
-    # return the assets in the wallet
-    # note: we are discarding some info here (rewards, offline, frozen, etc)
-    return coins
+from algo.tools.wallets import get_account_data
 
 
 class Wallet:
@@ -62,17 +25,16 @@ class Wallet:
     def portfolio_value(self, price_df, after_time: Optional[datetime.date] = None):
         def fill_time(df, m):
             keys = df.keys()
-            df['time_5min']=timestamp_to_5min(df.index)
-            all_times=[]
+            df['time_5min'] = timestamp_to_5min(df.index)
+            all_times = []
             delta = df['time_5min'].max() - df['time_5min'].min()
             for i in range(int(delta.total_seconds() / (5 * 60))):
                 all_times.append(df['time_5min'].min() + i * datetime.timedelta(seconds=5 * 60))
             all_times = pd.Series(all_times).rename('time_5min')
             assert len(all_times) == len(set(all_times))
             res = ffill_cols(df, keys, m, all_times)
-            res['index']=res['time_5min'].apply(datetime.datetime.timestamp)
+            res['index'] = res['time_5min'].apply(datetime.datetime.timestamp)
             return res.set_index('index')
-            
 
         if after_time == None:
             after_time = datetime.datetime.fromtimestamp(price_df['time'].min())
@@ -81,15 +43,15 @@ class Wallet:
         keys = wallet.keys()
         wallet = fill_time(wallet, 5)
         pricedic = {}
-        for (asset1, asset2), price in price_df.groupby(['asset1','asset2']):
-            if asset2==0:
+        for (asset1, asset2), price in price_df.groupby(['asset1', 'asset2']):
+            if asset2 == 0:
                 pricedic[asset1] = price
         value = []
         invalid = set()
         for t, r in wallet[::-1].iterrows():
             val = 0
             for assetid in keys:
-                if assetid==0:
+                if assetid == 0:
                     val += r[0]
                     continue
                 if assetid not in pricedic:
@@ -99,14 +61,12 @@ class Wallet:
                     continue
                 p = pricedic[assetid]
                 q = p[p['time'].gt(t)]['time']
-                if len(q)==0:
+                if len(q) == 0:
                     continue
-                i=p[p['time'].gt(t)]['time'].index[0]
-                val += r[assetid]*p.iloc[i]['asset2_reserves']/p.iloc[i]['asset1_reserves']
-            value.append({'time': t, 'value':val})
+                i = p[p['time'].gt(t)]['time'].index[0]
+                val += r[assetid] * p.iloc[i]['asset2_reserves'] / p.iloc[i]['asset1_reserves']
+            value.append({'time': t, 'value': val})
         return pd.DataFrame(value)
-
-        
 
     def historical_numbers(self, query_params):
         datastream = DataStream.from_address(self.address, query_params)
@@ -129,7 +89,7 @@ class Wallet:
                     txn_delta[assetid] = - txn['asset-transfer-transaction']['amount']
                 elif txn['sender'] == self.address:
                     txn_delta[0] = txn['fee']
-                    txn_delta[assetid] =  txn['asset-transfer-transaction']['amount']
+                    txn_delta[assetid] = txn['asset-transfer-transaction']['amount']
                 else:
                     raise ValueError('encountered invalid transaction')
             else:
@@ -139,7 +99,7 @@ class Wallet:
                 txn_delta['time'] = txn['round-time']
                 assets.append(txn_delta)
         res = pd.DataFrame(assets).fillna(0)
-        
+
         return res.set_index('time').cumsum()
 
     def update(self):

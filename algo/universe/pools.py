@@ -1,10 +1,8 @@
 from __future__ import annotations
 import json
 import os.path
-
 import algosdk.error
 from tinyman.v1.client import TinymanClient
-from wallets import Portfolio
 from functools import lru_cache
 import logging
 import warnings
@@ -15,6 +13,7 @@ from typing import Optional, Union
 from definitions import ROOT_DIR
 import numpy as np
 import time
+from algo.tools.wallets import get_account_data
 
 POOL_CACHE_BASEDIR = os.path.join(ROOT_DIR, 'caches/candidate_pools/pool_info')
 
@@ -87,7 +86,7 @@ class PoolIdStore:
             pool_list = pool_urls['results'] if self.fromTinyman else pool_urls['assets']
             for p in pool_list:
                 addr = p['address'] if self.fromTinyman else p['params']['creator']
-                asas = list(Portfolio(addr).coins.keys())
+                asas = list(get_account_data(addr).keys())
                 asas.sort()
                 if len(asas) > 3:
                     filtered = filter(lambda idx: idx != 0, asas)

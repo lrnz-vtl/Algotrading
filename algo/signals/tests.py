@@ -1,5 +1,3 @@
-import logging
-from matplotlib import pyplot as plt
 import unittest
 from algo.signals.datastore import AnalysisDataStore, RollingLiquidityFilter
 from algo.signals.evaluation import *
@@ -8,8 +6,9 @@ from algo.signals.responses import SimpleResponse, WinsorizeResponse
 from algo.signals.weights import SimpleWeightMaker
 from sklearn.linear_model import LinearRegression
 from algo.universe.universe import SimpleUniverse
-from dataclasses import dataclass
 from pydantic import BaseModel
+
+smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack_noeth'
 
 
 class EMALinearStrategy(BaseModel):
@@ -21,7 +20,6 @@ class TestAnalysisDs(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         price_cache = '20220209_prehack'
         # volume_cache = '20220209_prehack'
-        smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack'
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
@@ -64,7 +62,7 @@ class TestAnalysisDs(unittest.TestCase):
 
 class TestOOS(unittest.TestCase):
 
-    def _make_fitds(self, price_cache:str):
+    def _make_fitds(self, price_cache: str):
         ds = AnalysisDataStore([price_cache], [], self.universe, SimpleWeightMaker(),
                                ffill_price_minutes=self.ffill_price_minutes)
         features = ds.make_asset_features(concat_featurizers(self.featurizers))
@@ -72,8 +70,6 @@ class TestOOS(unittest.TestCase):
         return ds.make_fittable_data(features, response, [RollingLiquidityFilter()], [], True)
 
     def __init__(self, *args, **kwargs):
-        smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack'
-
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         self.ffill_price_minutes = 10
@@ -102,8 +98,6 @@ class TestOOS(unittest.TestCase):
 class TestFitTrading(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
-        smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack'
-
         self.cache_names = ['20220209_prehack', '20220209']
 
         logging.basicConfig(level=logging.INFO)

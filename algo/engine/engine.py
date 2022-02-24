@@ -12,7 +12,7 @@ from algo.trading.swapper import Swapper
 from algo.engine.base import BaseEngine, lag_ms
 import asyncio
 import datetime
-from algo.blockchain.wallets import get_account_data
+from algo.tools.wallets import get_account_data
 import requests
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os.path
-from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, PoolIdStore, load_pool_info
+from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, load_pool_info
 import json
 import dataclasses
 

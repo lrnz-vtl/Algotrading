@@ -2,13 +2,13 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe, join_caches_with_priority
+from algo.blockchain.utils import make_filter_from_universe, join_caches_with_priority
 from algo.strategy.analytics import process_market_df
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.weights import BaseWeightMaker
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 from algo.universe.universe import SimpleUniverse
-from typing import Callable, Optional
+from typing import Optional
 from algo.signals.evaluation import FittableDataStore
 from abc import ABC, abstractmethod
 from ts_tools_algo.series import rolling_min
@@ -108,6 +108,10 @@ class AnalysisDataStore:
 
             self.logger.info(f'Percentage of data retained after filtering nan responses: '
                              f'{self.weights[filt_idx].sum() / self.weights.sum()}')
+
+        prefilter_ids = set(self.weights.index.get_level_values(ASSET_INDEX_NAME).unique())
+        postfilter_ids = set(self.weights[filt_idx].index.get_level_values(ASSET_INDEX_NAME).unique())
+        self.logger.warning(f'After filtering some ids were dropped! {prefilter_ids}, {postfilter_ids}')
 
         return FittableDataStore(features[filt_idx],
                                  ComputedLookaheadResponse(response.ts[filt_idx], response.lookahead_time),

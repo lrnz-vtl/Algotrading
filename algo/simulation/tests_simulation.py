@@ -1,5 +1,7 @@
 from __future__ import annotations
 import datetime
+import json
+import os.path
 import unittest
 from algo.trading.impact import ASAImpactState, PositionAndImpactState, GlobalPositionAndImpactState, \
     ASAPosition
@@ -12,12 +14,12 @@ from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
 from algo.simulation.simulator import Simulator
 from algo.optimizer.optimizerV2 import OptimizerV2
 import logging
-from algo.simulation.reports import make_simulation_results, make_simulation_reports, SimulationResults, plot_aggregate_values_df
+from algo.simulation.reports import make_simulation_results, make_simulation_reports, \
+    SimulationResults, plot_aggregate_values_df
 from typing import Callable
-import pandas as pd
 from matplotlib import pyplot as plt
 from tinyman.v1.pools import Asset
-
+from dataclasses import asdict
 
 def make_signal_results(make_signal: Callable[[], PriceSignalProvider],
                         price_cache_name: str, universe_cache_name: str,
@@ -200,3 +202,5 @@ class TestReportsOOS(unittest.TestCase):
         aggdf = results.make_aggregate_values_df()
         plot_aggregate_values_df(aggdf)
         plt.show()
+
+

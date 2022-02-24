@@ -11,7 +11,7 @@ from definitions import ROOT_DIR
 import logging
 import aiohttp
 from algo.blockchain.algo_requests import QueryParams
-from algo.universe.universe import PoolIdStore
+from algo.universe.pools import PoolIdStore
 from tinyman.v1.client import TinymanClient
 import datetime
 from typing import Optional
@@ -118,8 +118,6 @@ class PriceScraper(DataScraper):
             yield ps
 
         self.logger.debug(f'Stopped scraping price for assets {self.assets}')
-
-
 
 
 class PriceCacher(DataCacher):

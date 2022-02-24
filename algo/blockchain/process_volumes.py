@@ -7,7 +7,7 @@ from algo.blockchain.base import DataScraper, NotExistentPoolError
 from algo.blockchain.cache import DataCacher
 from definitions import ROOT_DIR
 import datetime
-from algo.universe.universe import PoolIdStore
+from algo.universe.pools import PoolIdStore
 import aiohttp
 
 VOLUME_CACHES_BASEDIR = f'{ROOT_DIR}/caches/volumes'

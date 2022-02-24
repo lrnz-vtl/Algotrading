@@ -64,7 +64,11 @@ class DataStream:
 
             while True:
                 self.logger.debug('Making new request')
-                req1 = session.get(url=self.url, params=self.params)
+
+                try:
+                    req1 = session.get(url=self.url, params=self.params)
+                except requests.exceptions.ChunkedEncodingError as e:
+                    raise StreamException("ChunkedEncodingError")
 
                 if not req1.ok:
                     self.logger.critical("session.get response is not OK"

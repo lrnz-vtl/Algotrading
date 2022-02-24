@@ -1,12 +1,11 @@
 import datetime
 import glob
 import re
-
 import pandas as pd
 from pathlib import Path
 from definitions import ROOT_DIR
 from algo.universe.universe import SimpleUniverse
-from typing import Optional,Callable
+from typing import Optional, Callable
 
 
 def datetime_to_int(t: datetime.datetime):
