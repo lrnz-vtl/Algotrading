@@ -63,3 +63,9 @@ class TradeInfo(BaseModel):
         except AssertionError:
             return False
         return True
+
+
+def read_tradeinfos(tradelog_fname: str) -> list[TradeInfo]:
+    with open(tradelog_fname) as f:
+        data = f.readlines()
+    return [TradeInfo.parse_raw(x.strip()) for x in data]

@@ -12,7 +12,7 @@ from algo.trading.swapper import Swapper
 from algo.engine.base import BaseEngine, lag_ms
 import asyncio
 import datetime
-from wallets import get_account_data
+from algo.blockchain.wallets import get_account_data
 import requests
 
 
@@ -56,7 +56,6 @@ class Engine(BaseEngine):
         self.last_update_times: dict[int, datetime.datetime] = {}
 
         self.last_market_state_update: datetime.datetime = None
-
 
         self.address = address
         self.pos_impact_state: Optional[GlobalPositionAndImpactState] = None

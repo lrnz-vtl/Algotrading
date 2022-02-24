@@ -79,3 +79,21 @@ def load_algo_pools(cache_name: str, data_type: str, filter_pair: Optional[Calla
     pattern = f'{ROOT_DIR}/caches/{data_type}/{cache_name}/*'
 
     return load_from_cache(pattern, filter_pair)
+
+
+def join_caches_with_priority(caches: list[str], data_type: str, filter_pair: Optional[Callable]):
+    data = []
+    for cache_priority, cachename in enumerate(caches):
+        subdf = load_algo_pools(cachename, data_type, filter_pair=filter_pair)
+        subdf['cache_priority'] = cache_priority
+        data.append(subdf)
+    df = pd.concat(data)
+    time_maxes = df.groupby(['asset1', 'cache_priority'])['time'].max()
+
+    filt_idx = pd.Series(True, index=df.index)
+
+    for x, time_max in time_maxes.items():
+        aid, priority = x[0], x[1]
+        filt_idx &= (df['cache_priority'] <= priority) | (df['asset1'] != aid) | (df['time'] > time_max)
+
+    return df[filt_idx].drop(columns='cache_priority').sort_values(by='time')

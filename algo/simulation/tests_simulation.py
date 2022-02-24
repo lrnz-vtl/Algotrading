@@ -12,8 +12,61 @@ from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
 from algo.simulation.simulator import Simulator
 from algo.optimizer.optimizerV2 import OptimizerV2
 import logging
-from algo.simulation.simulation import make_simulation_results, make_simulation_reports
+from algo.simulation.reports import make_simulation_results, make_simulation_reports, SimulationResults, plot_aggregate_values_df
 from typing import Callable
+import pandas as pd
+from matplotlib import pyplot as plt
+from tinyman.v1.pools import Asset
+
+
+def make_signal_results(make_signal: Callable[[], PriceSignalProvider],
+                        price_cache_name: str, universe_cache_name: str,
+                        initial_time: datetime.datetime, end_time: datetime.datetime,
+                        optimizer_cls=OptimizerV2):
+    risk_coef = 0.000002 * 10 ** -6
+    impact_timescale_seconds = 5 * 60
+    simulation_step_seconds = 5 * 60
+
+    initial_mualgo_position = 1000 * 10 ** 6
+
+    seed_time = datetime.timedelta(days=2)
+
+    universe = SimpleUniverse.from_cache(universe_cache_name)
+
+    filter_pair = make_filter_from_universe(universe)
+    dfp = load_algo_pools(price_cache_name, 'prices', filter_pair)
+
+    price_stream = stream_from_price_df(dfp, initial_time)
+    asset_ids = [pool.asset1_id for pool in universe.pools]
+    assert all(pool.asset2_id == 0 for pool in universe.pools)
+
+    pos_impact_states = {
+        asset_id: PositionAndImpactState(ASAImpactState(impact_timescale_seconds),
+                                         ASAPosition(0))
+        for asset_id in asset_ids
+    }
+    pos_impact_state = GlobalPositionAndImpactState(pos_impact_states, initial_mualgo_position)
+
+    signal_providers = {
+        asset_id: make_signal() for asset_id in asset_ids
+    }
+
+    def make_optimizer(aid: int):
+        asset1 = Asset(aid)
+        asset2 = Asset(0)
+        return OptimizerV2(asset1=asset1, asset2=asset2, risk_coef=risk_coef)
+
+    simulator = Simulator(universe=universe,
+                          pos_impact_state=pos_impact_state,
+                          signal_providers=signal_providers,
+                          simulation_step_seconds=simulation_step_seconds,
+                          seed_time=seed_time,
+                          price_stream=price_stream,
+                          make_optimizer = make_optimizer
+                          )
+
+    results = make_simulation_results(simulator, end_time)
+    return results
 
 
 class TestReports(unittest.TestCase):
@@ -22,77 +75,47 @@ class TestReports(unittest.TestCase):
         logging.basicConfig(level=logging.ERROR)
         self.logger = logging.getLogger(__name__)
 
+        self.price_cache_name = '20220209_prehack'
+        self.universe_cache_name = 'liquid_algo_pools_nousd_prehack'
+
+        short = False
+        self.initial_time = datetime.datetime(year=2021, month=10, day=15, tzinfo=timezone.utc)
+        if short:
+            self.end_time = datetime.datetime(year=2021, month=10, day=18, tzinfo=timezone.utc)
+        else:
+            self.end_time = datetime.datetime(year=2021, month=12, day=31, tzinfo=timezone.utc)
+
         self.optimizer_cls = OptimizerV2
 
         super().__init__(*args, **kwargs)
 
-    def _test_signal(self, make_signal: Callable[[], PriceSignalProvider]):
-        risk_coef = 0.000002 * 10 ** -6
-        price_cache_name = '20220209_prehack'
-        universe_cache_name = 'liquid_algo_pools_nousd_prehack'
-        impact_timescale_seconds = 5 * 60
-        simulation_step_seconds = 5 * 60
+    def test_fitted_signal(self):
+        minutes = (30, 60, 120)
+        betas = [-0.2942255, 0.47037815, -0.38620892]
 
-        initial_mualgo_position = 1000 * 10 ** 6
+        params = [EmaSignalParam(minute * 60, beta) for minute, beta in zip(minutes, betas)]
 
-        seed_time = datetime.timedelta(days=1)
-        initial_time = datetime.datetime(year=2021, month=10, day=15, tzinfo=timezone.utc)
-        # end_time = datetime.datetime(year=2021, month=10, day=18, tzinfo=timezone.utc)
-        end_time = datetime.datetime(year=2021, month=12, day=31, tzinfo=timezone.utc)
+        def make_signal():
+            return EmaSignalProvider(params, 0.05)
 
-        universe = SimpleUniverse.from_cache(universe_cache_name)
+        results = make_signal_results(make_signal, self.price_cache_name, self.universe_cache_name,
+                                      self.initial_time, self.end_time)
 
-        filter_pair = make_filter_from_universe(universe)
-        dfp = load_algo_pools(price_cache_name, 'prices', filter_pair)
-
-        price_stream = stream_from_price_df(dfp, initial_time)
-        asset_ids = [pool.asset1_id for pool in universe.pools]
-        assert all(pool.asset2_id == 0 for pool in universe.pools)
-
-        pos_impact_states = {
-            asset_id: PositionAndImpactState(ASAImpactState(impact_timescale_seconds),
-                                             ASAPosition(0))
-            for asset_id in asset_ids
-        }
-        pos_impact_state = GlobalPositionAndImpactState(pos_impact_states, initial_mualgo_position)
-
-        signal_providers = {
-            asset_id: make_signal() for asset_id in asset_ids
-        }
-
-        simulator = Simulator(universe=universe,
-                              pos_impact_state=pos_impact_state,
-                              signal_providers=signal_providers,
-                              simulation_step_seconds=simulation_step_seconds,
-                              risk_coef=risk_coef,
-                              seed_time=seed_time,
-                              price_stream=price_stream,
-                              optimizer_cls=self.optimizer_cls
-                              )
-
-        results = make_simulation_results(simulator, end_time)
-
-        # with open('simResults.pickle', 'wb') as f:
-        #     pickle.dump(results, f)
-
-        make_simulation_reports(results)
+        results.save_to_folder('/home/lorenzo/Algotrading/sim_results/is_220223')
 
     def test_liquidation(self):
-        log_null_trades = True
         initial_position_multiplier = 1 / 100
         risk_coef = 0.000002 * 10 ** -6
-        price_cache_name = '20220209_prehack'
-        universe_cache_name = 'liquid_algo_pools_nousd_prehack'
         impact_timescale_seconds = 5 * 60
         simulation_step_seconds = 5 * 60
         initial_mualgo_position = 1000000
         seed_time = datetime.timedelta(days=1)
         initial_time = datetime.datetime(year=2021, month=11, day=10, tzinfo=timezone.utc)
 
-        universe = SimpleUniverse.from_cache(universe_cache_name)
+        universe = SimpleUniverse.from_cache(self.universe_cache_name)
 
         filter_pair = make_filter_from_universe(universe)
-        dfp = load_algo_pools(price_cache_name, 'prices', filter_pair)
+        dfp = load_algo_pools(self.price_cache_name, 'prices', filter_pair)
 
         # Just choose some starting positions
         initial_positions = (dfp.groupby('asset1')['asset1_reserves'].mean() * initial_position_multiplier).astype(int)
@@ -128,42 +151,52 @@ class TestReports(unittest.TestCase):
 
         make_simulation_reports(results)
 
+    def test_random_signal(self):
+        def make_signal():
+            return RandomSignalProvider(0.002)
+
+        results = make_signal_results(make_signal, self.price_cache_name, self.universe_cache_name,
+                                      self.initial_time, self.end_time)
+        make_simulation_reports(results)
+
+
+class TestReportsOOS(unittest.TestCase):
+
+    def __init__(self, *args, **kwargs):
+        logging.basicConfig(level=logging.WARNING)
+        self.logger = logging.getLogger(__name__)
+
+        self.price_cache_name = '20220209'
+        self.universe_cache_name = 'liquid_algo_pools_nousd_prehack'
+
+        short = False
+        self.initial_time = datetime.datetime(year=2022, month=1, day=25, tzinfo=timezone.utc)
+        if short:
+            self.end_time = datetime.datetime(year=2022, month=1, day=30, tzinfo=timezone.utc)
+        else:
+            self.end_time = datetime.datetime(year=2022, month=2, day=22, tzinfo=timezone.utc)
+
+        self.optimizer_cls = OptimizerV2
+
+        super().__init__(*args, **kwargs)
+
     def test_fitted_signal(self):
-        params = [
-            EmaSignalParam(30 * 60, -0.14389164),
-            EmaSignalParam(60 * 60, 0.14088184),
-            EmaSignalParam(120 * 60, -0.12424874)
-        ]
-
-        def make_signal():
-            return EmaSignalProvider(params)
-
-        self._test_signal(make_signal)
-
-    def test_fitted_signal_2h(self):
         minutes = (30, 60, 120)
-        betas = [-0.31642892, 0.45522962, -0.38743692]
-
-        params = [EmaSignalParam(minute * 60, beta) for minute, beta in zip(minutes, betas)]
-
-        def make_signal():
-            return EmaSignalProvider(params)
-
-        self._test_signal(make_signal)
-
-    def test_fitted_signal_2h_cap(self):
-        minutes = (30, 60, 120)
-        betas = [-0.31642892, 0.45522962, -0.38743692]
+        betas = [-0.2942255, 0.47037815, -0.38620892]
 
         params = [EmaSignalParam(minute * 60, beta) for minute, beta in zip(minutes, betas)]
 
         def make_signal():
             return EmaSignalProvider(params, 0.05)
 
-        self._test_signal(make_signal)
+        results = make_signal_results(make_signal, self.price_cache_name, self.universe_cache_name,
+                                      self.initial_time, self.end_time)
 
-    def test_random_signal(self):
-        def make_signal():
-            return RandomSignalProvider(0.002)
+        results.save_to_folder('/home/lorenzo/Algotrading/sim_results/oos_220223')
 
-        self._test_signal(make_signal)
+    def test_report(self):
+        folder = '/home/lorenzo/Algotrading/sim_results/oos_220223'
+        results = SimulationResults.from_folder(folder)
+        aggdf = results.make_aggregate_values_df()
+        plot_aggregate_values_df(aggdf)
+        plt.show()

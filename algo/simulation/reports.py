@@ -10,6 +10,8 @@ from algo.blockchain.utils import datetime_to_int
 from algo.trading.trades import TradeInfo
 from algo.simulation.simulator import Simulator
 import numpy as np
+import scipy
+import scipy.signal
 
 
 @dataclass
@@ -24,13 +26,17 @@ class SimulationResults:
         asa_mualgo_data = (self.state_df.loc[asa_idx, 'position'] * self.state_df.loc[asa_idx, 'price']).rename(
             'position_value_mualgo')
         asa_mualgo_data = pd.DataFrame(asa_mualgo_data).join(self.trade_df[cost_cols]).fillna(0)
-        total_asa_algo_data = asa_mualgo_data.groupby('unix_time_seconds').sum() / 10 ** 6
+
+        asa_algo_data = asa_mualgo_data / 10 ** 6
+        total_asa_algo_data = asa_algo_data.groupby('unix_time_seconds').sum()
         total_asa_algo_data.columns = [x.replace('mu', '') for x in total_asa_algo_data.columns]
         costs = total_asa_algo_data[['costs.fixed_fees_algo', 'costs.linear_impact_cost_algo']].cumsum().sum(
             axis=1).rename('costs')
         algo_algovalue = (self.state_df[~asa_idx]['position'].droplevel(0) / 10 ** 6).rename('algo_position')
 
-        return pd.concat([total_asa_algo_data['position_value_algo'], algo_algovalue, costs], axis=1)
+        agg_df = pd.concat([total_asa_algo_data['position_value_algo'], algo_algovalue, costs], axis=1)
+        agg_df.index = pd.to_datetime(agg_df.index, unit='s', utc=True).rename('time')
+        return agg_df
 
     def save_to_folder(self, pathname):
         if not os.path.exists(pathname):
@@ -48,8 +54,31 @@ class SimulationResults:
 def plot_aggregate_values_df(agg_df):
     (agg_df['position_value_algo'] + agg_df['algo_position']).plot(label='algo value')
     (agg_df['position_value_algo'] + agg_df['algo_position'] - agg_df['costs']).plot(label='algo value with costs')
+    smoothed_position = pd.Series(
+        scipy.signal.savgol_filter(agg_df['position_value_algo'], window_length=300, polyorder=1),
+        index=agg_df.index
+    )
+    smoothed_position.plot(label='asa position')
     plt.legend()
+    plt.xticks(rotation=35)
     plt.grid()
+
+
+def make_trade_df(trade_data: list[TradeInfo]):
+    trade_df = pd.json_normalize([obj.dict() for obj in trade_data])
+    trade_df['unix_time_seconds'] = trade_df['trade.time'].apply(datetime_to_int)
+    trade_df = trade_df.rename({'asa_id': 'asset_id'})
+
+    sell_asa_idx = trade_df['trade.asset_sell_id'] > 0
+    buy_asa_idx = ~sell_asa_idx
+    trade_df.loc[sell_asa_idx, 'asset_id'] = trade_df.loc[sell_asa_idx, 'trade.asset_sell_id']
+    trade_df.loc[buy_asa_idx, 'asset_id'] = trade_df.loc[buy_asa_idx, 'trade.asset_buy_id']
+    trade_df.loc[sell_asa_idx, 'asa_amount'] = - trade_df.loc[sell_asa_idx, 'trade.asset_sell_amount']
+    trade_df.loc[buy_asa_idx, 'asa_amount'] = trade_df.loc[buy_asa_idx, 'trade.asset_buy_amount']
+    trade_df['asset_id'] = trade_df['asset_id'].astype(int)
+    trade_df['asa_amount'] = trade_df['asa_amount'].astype(int)
+
+    return trade_df.set_index(['asset_id', 'unix_time_seconds']).sort_index()
 
 
 def make_simulation_results(simulator: Simulator, end_time: datetime.datetime) -> SimulationResults:
@@ -64,21 +93,7 @@ def make_simulation_results(simulator: Simulator, end_time: datetime.datetime) -
 
     simulator.run(end_time, log_trade, log_state)
 
-    # trade_df = pd.json_normalize([asdict(obj) for obj in trade_data])
-    trade_df = pd.json_normalize([obj.dict() for obj in trade_data])
-    trade_df['unix_time_seconds'] = trade_df['trade.time'].apply(datetime_to_int)
-    trade_df = trade_df.rename({'asa_id': 'asset_id'})
-
-    sell_asa_idx = trade_df['trade.asset_sell_id'] > 0
-    buy_asa_idx = ~sell_asa_idx
-    trade_df.loc[sell_asa_idx, 'asset_id'] = trade_df.loc[sell_asa_idx, 'trade.asset_sell_id']
-    trade_df.loc[buy_asa_idx, 'asset_id'] = trade_df.loc[buy_asa_idx, 'trade.asset_buy_id']
-    trade_df.loc[sell_asa_idx, 'asa_amount'] = - trade_df.loc[sell_asa_idx, 'trade.asset_sell_amount']
-    trade_df.loc[buy_asa_idx, 'asa_amount'] = trade_df.loc[buy_asa_idx, 'trade.asset_buy_amount']
-    trade_df['asset_id'] = trade_df['asset_id'].astype(int)
-    trade_df['asa_amount'] = trade_df['asa_amount'].astype(int)
-
-    trade_df = trade_df.set_index(['asset_id', 'unix_time_seconds']).sort_index()
+    trade_df = make_trade_df(trade_data)
 
     rows = []
     for x in state_data:
