@@ -9,17 +9,17 @@ import aiohttp.client_exceptions
 
 @dataclass
 class QueryParams:
-    after_time: Optional[datetime.date] = None
-    before_time: Optional[datetime.date] = None
+    after_time: Optional[datetime.datetime] = None
+    before_time: Optional[datetime.datetime] = None
     min_block: Optional[int] = None
     max_block: Optional[int] = None
 
     def make_params(self):
         params = {}
         if self.before_time is not None:
-            params['before-time'] = self.before_time.strftime('%Y-%m-%d')
+            params['before-time'] = self.before_time.strftime('%Y-%m-%dT%H:%M:%SZ')
         if self.after_time is not None:
-            params['after-time'] = self.after_time.strftime('%Y-%m-%d')
+            params['after-time'] = self.after_time.strftime('%Y-%m-%dT%H:%M:%SZ')
         if self.min_block is not None:
             params['min-round'] = self.min_block
         if self.min_block is not None:

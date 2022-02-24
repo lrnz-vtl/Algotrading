@@ -1,5 +1,6 @@
 from __future__ import annotations
-import requests, logging, time
+import requests, logging, time, datetime, warnings
+import pandas as pd
 from typing import Dict, Iterable, Tuple, Optional
 from algo.blockchain.algo_requests import QueryParams
 from algo.blockchain.stream import DataStream
@@ -56,6 +57,41 @@ class Portfolio:
         else:
             self.address = address
             self.update()
+
+    def portfolio_value(self, price_df, after_time: Optional[datetime.date] = None, before_time: Optional[datetime.date] = None):
+        if after_time == None:
+            after_time = datetime.datetime.fromtimestamp(price_df['time'].min())
+        if before_time == None:
+            before_time = datetime.datetime.fromtimestamp(price_df['time'].max())
+        query_params = QueryParams(after_time=after_time)
+        wallet = self.historical_numbers(query_params)
+        pricedic = {}
+        for (asset1, asset2), price in price_df.groupby(['asset1','asset2']):
+            if asset2==0:
+                pricedic[asset1] = price
+        value = []
+        invalid = set()
+        for t, r in wallet.iterrows():
+            val = 0
+            for assetid in r.keys():
+                if assetid==0:
+                    val += r[0]
+                    continue
+                if assetid not in pricedic:
+                    if assetid not in invalid:
+                        warnings.warn(f'Skipping asset {assetid} for which no price data was given')
+                        invalid.add(assetid)
+                    continue
+                p = pricedic[assetid]
+                q = p[p['time'].gt(t)]['time']
+                if len(q)==0:
+                    continue
+                i=p[p['time'].gt(t)]['time'].index[0]
+                val += r[assetid]*p.iloc[i]['asset2_reserves']/p.iloc[i]['asset1_reserves']
+            value.append({'time': t, 'value':val})
+        return pd.DataFrame(value)
+
+        
 
     def historical_numbers(self, query_params):
         datastream = DataStream.from_address(self.address, query_params)
