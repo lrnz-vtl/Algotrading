@@ -13,6 +13,8 @@ import numpy as np
 import scipy
 import scipy.signal
 
+TRADEDF_FNAME = 'trade_df.parquet.gzip'
+
 
 @dataclass
 class SimulationResults:
@@ -41,12 +43,12 @@ class SimulationResults:
     def save_to_folder(self, pathname):
         if not os.path.exists(pathname):
             os.makedirs(pathname)
-        self.trade_df.to_parquet(os.path.join(pathname, 'trade_df.parquet'))
+        self.trade_df.to_parquet(os.path.join(pathname, TRADEDF_FNAME), engine='fastparquet', compression='gzip')
         self.state_df.to_parquet(os.path.join(pathname, 'state_df.parquet'))
 
     @staticmethod
     def from_folder(pathname) -> SimulationResults:
-        trade_df = pd.read_parquet(os.path.join(pathname, 'trade_df.parquet'))
+        trade_df = pd.read_parquet(os.path.join(pathname, TRADEDF_FNAME), engine='fastparquet')
         state_df = pd.read_parquet(os.path.join(pathname, 'state_df.parquet'))
         return SimulationResults(trade_df, state_df, None)
 

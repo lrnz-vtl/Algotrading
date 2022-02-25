@@ -24,6 +24,7 @@ class PriceInvariantTradeRecord:
 
 class TradeRecord(BaseModel):
     time: datetime.datetime
+    lag_after_update: datetime.timedelta
     asset_buy_id: int
     asset_sell_id: int
     asset_buy_amount: int

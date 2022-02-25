@@ -1,7 +1,5 @@
 from __future__ import annotations
 import datetime
-import json
-import os.path
 import unittest
 from algo.trading.impact import ASAImpactState, PositionAndImpactState, GlobalPositionAndImpactState, \
     ASAPosition
@@ -10,7 +8,7 @@ from algo.trading.signalprovider import DummySignalProvider, EmaSignalProvider, 
 from algo.blockchain.stream import stream_from_price_df
 from datetime import timezone
 from algo.universe.universe import SimpleUniverse
-from algo.blockchain.utils import load_algo_pools
+from algo.dataloading.caching import load_algo_pools
 from algo.dataloading.caching import make_filter_from_universe
 from algo.simulation.simulator import Simulator
 from algo.optimizer.optimizerV2 import OptimizerV2
@@ -20,17 +18,20 @@ from algo.simulation.reports import make_simulation_results, make_simulation_rep
 from typing import Callable
 from matplotlib import pyplot as plt
 from tinyman.v1.pools import Asset
-from dataclasses import asdict
+
+
+
 
 def make_signal_results(make_signal: Callable[[], PriceSignalProvider],
                         price_cache_name: str, universe_cache_name: str,
                         initial_time: datetime.datetime, end_time: datetime.datetime,
-                        optimizer_cls=OptimizerV2):
-    risk_coef = 0.000002 * 10 ** -6
+                        risk_multiplier:float,
+                        initial_algo_position:int):
+    risk_coef = risk_multiplier * 10 ** -6
     impact_timescale_seconds = 5 * 60
     simulation_step_seconds = 5 * 60
 
-    initial_mualgo_position = 1000 * 10 ** 6
+    initial_mualgo_position = initial_algo_position * 10 ** 6
 
     seed_time = datetime.timedelta(days=2)
 
@@ -65,7 +66,7 @@ def make_signal_results(make_signal: Callable[[], PriceSignalProvider],
                           simulation_step_seconds=simulation_step_seconds,
                           seed_time=seed_time,
                           price_stream=price_stream,
-                          make_optimizer = make_optimizer
+                          make_optimizer=make_optimizer
                           )
 
     results = make_simulation_results(simulator, end_time)
@@ -96,6 +97,8 @@ class TestReports(unittest.TestCase):
         minutes = (30, 60, 120)
         betas = [-0.2942255, 0.47037815, -0.38620892]
 
+
+
         params = [EmaSignalParam(minute * 60, beta) for minute, beta in zip(minutes, betas)]
 
         def make_signal():
@@ -104,7 +107,8 @@ class TestReports(unittest.TestCase):
         results = make_signal_results(make_signal, self.price_cache_name, self.universe_cache_name,
                                       self.initial_time, self.end_time)
 
-        results.save_to_folder('/home/lorenzo/Algotrading/sim_results/is_220223')
+        # results.save_to_folder('/home/lorenzo/Algotrading/sim_results/is_220223_lag')
+        results.save_to_folder('/home/lorenzo/Algotrading/sim_results/is_220223_lag_new')
 
     def test_liquidation(self):
         initial_position_multiplier = 1 / 100
@@ -166,7 +170,7 @@ class TestReports(unittest.TestCase):
 class TestReportsOOS(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
-        logging.basicConfig(level=logging.WARNING)
+        logging.basicConfig(level=logging.ERROR)
         self.logger = logging.getLogger(__name__)
 
         self.price_cache_name = '20220209'
@@ -185,23 +189,34 @@ class TestReportsOOS(unittest.TestCase):
 
     def test_fitted_signal(self):
         minutes = (30, 60, 120)
-        betas = [-0.2942255, 0.47037815, -0.38620892]
+        # betas = [-0.2942255, 0.47037815, -0.38620892]
+        betas_new = [-0.38339549, 0.54108776, -0.41479177]
+        betas = betas_new
+
+        # signal_cap = 0.05
+        # risk_multiplier = 0.000002
+
+        signal_cap = 0.1
+        risk_multiplier = 0.0000001
+        initial_algo_position = 2000
 
         params = [EmaSignalParam(minute * 60, beta) for minute, beta in zip(minutes, betas)]
 
         def make_signal():
-            return EmaSignalProvider(params, 0.05)
+            return EmaSignalProvider(params, signal_cap)
 
         results = make_signal_results(make_signal, self.price_cache_name, self.universe_cache_name,
-                                      self.initial_time, self.end_time)
+                                      self.initial_time, self.end_time, risk_multiplier, initial_algo_position)
 
-        results.save_to_folder('/home/lorenzo/Algotrading/sim_results/oos_220223')
+        results.save_to_folder(f'/home/lorenzo/Algotrading/sim_results/oos_220223_lag_new_{initial_algo_position}_{signal_cap}_{risk_multiplier}')
 
     def test_report(self):
-        folder = '/home/lorenzo/Algotrading/sim_results/oos_220223'
+        signal_cap = 0.1
+        risk_multiplier = 0.0000001
+        initial_algo_position = 2000
+
+        folder = f'/home/lorenzo/Algotrading/sim_results/oos_220223_lag_new_{initial_algo_position}_{signal_cap}_{risk_multiplier}'
         results = SimulationResults.from_folder(folder)
         aggdf = results.make_aggregate_values_df()
         plot_aggregate_values_df(aggdf)
         plt.show()
-
-

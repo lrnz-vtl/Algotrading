@@ -1,16 +1,23 @@
 from __future__ import annotations
+
+import unittest
+
 from algo.blockchain.stream import DataStream, PriceVolumeStream, only_price
 from algo.blockchain.process_prices import PriceScraper
 from algo.blockchain.stream import PriceUpdate
 import aiohttp
-from tinyman.v1.client import TinymanClient
+from tinyman.v1.client import TinymanClient, TinymanMainnetClient
 import asyncio
 import logging
 from algo.blockchain.process_prices import PoolState
 from algo.blockchain.algo_requests import QueryParams
 from algo.universe.universe import SimpleUniverse
+from algo.universe.pools import PoolId, PoolIdStore
+from algo.dataloading.caching import make_filter_from_universe, load_algo_pools
 import datetime
 import uvloop
+from dataclasses import asdict
+import pandas as pd
 
 
 class PriceStreamer:
@@ -55,6 +62,69 @@ class PriceStreamer:
                                                query_params=QueryParams(after_time=self.date_min),
                                                filter_tx_type=self.filter_tx_type):
             self.data.append(PriceUpdate(asset_ids=(max(assets), min(assets)), price_update=pool_state))
+
+
+class TotalDataLoader:
+    def __init__(self, cache_name: str, client: TinymanClient, ffilt):
+        self.logger = logging.getLogger(__name__)
+        self.cached_data = load_algo_pools(cache_name, 'prices', ffilt)
+
+        self.min_dates = self.cached_data.groupby(['asset1', 'asset2']) \
+                             .apply(lambda x: max(pd.to_datetime(x['time'], unit='s', utc=True).dt.date)) \
+                         + datetime.timedelta(days=1)
+
+        self.new_data = []
+
+        self.assets = [(x['asset1'], x['asset2']) for _, x in
+                       self.cached_data[['asset1', 'asset2']].drop_duplicates().iterrows()]
+
+        self.client = client
+        self.filter_tx_type = False
+
+    async def main(self):
+        async with aiohttp.ClientSession() as session:
+            await asyncio.gather(*[self._load_pool(session, assets) for assets in self.assets])
+
+    def load(self) -> pd.DataFrame:
+        async def main():
+            async with aiohttp.ClientSession() as session:
+                await asyncio.gather(*[self._load_pool(session, assets) for assets in self.assets])
+
+        # uvloop.install()
+        asyncio.run(main())
+
+        self.new_data.sort(key=lambda x: x.price_update.time)
+
+        data = [{**{'asset1': row.asset_ids[0], 'asset2': row.asset_ids[1]}, **asdict(row.price_update)}
+                for row in self.new_data]
+
+        new_df = pd.DataFrame(data)
+        assert new_df['time'].min() - self.cached_data['time'].max()
+        ret = pd.concat([self.cached_data, new_df]).sort_values(by=['time', 'asset1', 'asset2']).reset_index(drop=True)
+        return ret
+
+    async def _load_pool(self, session, assets) -> None:
+
+        scraper = PriceScraper(self.client, int(assets[0]), int(assets[1]), skip_same_time=True)
+
+        if scraper is None:
+            self.logger.error(f'Pool for assets {assets[0], assets[1]} does not exist')
+            return
+
+        date_min = self.min_dates.loc[assets]
+
+        async for pool_state in scraper.scrape(session=session,
+                                               num_queries=None,
+                                               timestamp_min=None,
+                                               query_params=QueryParams(after_time=date_min),
+                                               filter_tx_type=self.filter_tx_type):
+            self.new_data.append(PriceUpdate(asset_ids=(max(assets), min(assets)), price_update=pool_state))
+
+
+class TestDataLoader(unittest.TestCase):
+    def test_loader(self):
+        tdl = TotalDataLoader('20220209', TinymanMainnetClient())
+        print(tdl.load())
 
 
 class MixedPriceStreamer:

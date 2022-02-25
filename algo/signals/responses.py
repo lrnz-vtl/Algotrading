@@ -8,8 +8,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 import warnings
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 from pydantic import BaseModel
+
 
 @dataclass
 class ComputedLookaheadResponse:
@@ -55,7 +57,8 @@ class SimpleResponse(LookaheadResponse):
 
         start_time_forward = price.copy()
         start_time_forward.index = start_time_forward.index.set_levels(
-            start_time_forward.index.levels[1] - datetime.timedelta(minutes=self.start_minutes_forward), TIME_INDEX_NAME)
+            start_time_forward.index.levels[1] - datetime.timedelta(minutes=self.start_minutes_forward),
+            TIME_INDEX_NAME)
 
         prices = price.to_frame().join(time_forward, rsuffix='_forward').join(start_time_forward, rsuffix='_start')
         resp = (prices['price_forward'] - prices['price_start']) / prices['price_start']
@@ -63,20 +66,36 @@ class SimpleResponse(LookaheadResponse):
         return resp
 
 
-def my_winsorize(y):
+def my_winsorize(y, limits=(0.05, 0.05)):
     resp = y.copy()
     mask = ~np.isnan(resp)
-    resp[mask] = winsorize(resp[mask], limits=(0.05, 0.05))
+    resp[mask] = winsorize(resp[mask], limits=limits)
     return resp
 
 
+def drop_extremes(y: pd.Series, limits=0.05):
+    lower = y.quantile(limits)
+    upper = y.quantile(1.0 - limits)
+    return y[(y > lower) & (y < upper)]
+
+
 class TransformResponse:
-    def __init__(self, pipeline, resp_transform):
+    def __init__(self, pipeline, resp_transform, weight_argname='sample_weight'):
         self.pipeline = pipeline
         self.resp_transorm = resp_transform
+        self.weight_argname = weight_argname
 
     def fit(self, X, y, **kwargs):
-        self.pipeline.fit(X, self.resp_transorm(y), **kwargs)
+        y = self.resp_transorm(y)
+        X = X[X.index.isin(y.index)]
+        try:
+            w = kwargs[self.weight_argname]
+        except KeyError as e:
+            print(kwargs.keys())
+            raise e
+        w = w[w.index.isin(y.index)]
+        kwargs[self.weight_argname] = w
+        self.pipeline.fit(X, y, **kwargs)
         return self
 
     def fit_transform(self, X, y, **kwargs):

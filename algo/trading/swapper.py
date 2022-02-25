@@ -11,6 +11,7 @@ from tinyman.v1.optin import prepare_asset_optin_transactions
 import algosdk
 from enum import Enum
 
+
 # Max amount of Algo left locked in a pool
 MAX_VALUE_LOCKED_ALGOS = 1
 
@@ -51,7 +52,7 @@ class AlgoPoolSwap:
                                redeemable_amount=self.redeemable_amount
                                ).to_mualgo_basis()
 
-    def make_record(self, time: datetime.datetime, asa_id: int):
+    def make_record(self, time: datetime.datetime, lag_after_update:datetime.timedelta, asa_id: int):
         if asa_id == self.asset_buy:
             asset_sell_id = 0
         else:
@@ -66,7 +67,8 @@ class AlgoPoolSwap:
             asset_sell_amount=self.amount_sell,
             asset_buy_amount_with_slippage=self.amount_buy_with_slippage,
             asset_sell_amount_with_slippage=self.amount_sell_with_slippage,
-            txid=self.txid
+            txid=self.txid,
+            lag_after_update=lag_after_update
         )
 
 
@@ -74,11 +76,12 @@ class AlgoPoolSwap:
 class MaybeTradedSwap:
     swap: Optional[AlgoPoolSwap]
     time: datetime.datetime
+    lag_after_update: datetime.timedelta
 
 
 @dataclass
 class TimedSwapQuote:
-    time: datetime.datetime
+    last_market_update_time: datetime.datetime
     quote: SwapQuote
     mualgo_reserves_at_opt: int
     asa_reserves_at_opt: int
@@ -148,8 +151,6 @@ class ProductionSwapper(Swapper):
 
     def attempt_transaction(self, quote: TimedSwapQuote) -> MaybeTradedSwap:
 
-        time_start = datetime.datetime.utcnow()
-
         if self.execution_option == ExecutionOption.REFRESH_AND_RECOMPUTE:
             quote_to_submit = self.pool.fetch_fixed_input_swap_quote(amount_in=quote.quote.amount_in,
                                                                      slippage=quote.quote.slippage)
@@ -179,6 +180,8 @@ class ProductionSwapper(Swapper):
         transaction_group.sign_with_private_key(self.address, self.key)
         res = self.client.submit(transaction_group, wait=self.fetch_redeemable_amounts)
 
+        time_trade = datetime.datetime.utcnow()
+
         if isinstance(transaction_group.transactions[3], algosdk.future.transaction.PaymentTxn):
             tx_out = transaction_group.transactions[3].amt
         elif isinstance(transaction_group.transactions[3], algosdk.future.transaction.AssetTransferTxn):
@@ -205,10 +208,9 @@ class ProductionSwapper(Swapper):
                                      f"\n{t}"
                                      f"\n{e}")
 
-        time = datetime.datetime.utcnow()
-        lag = lag_ms(time-time_start)
+        lag_after_update = time_trade - quote.last_market_update_time
 
-        self.logger.info(f'Performed transaction in {lag} ms')
+        self.logger.info(f'Performed transaction in {lag_ms(lag_after_update)} ms after last market sync')
 
         return MaybeTradedSwap(
             AlgoPoolSwap(
@@ -220,7 +222,8 @@ class ProductionSwapper(Swapper):
                 txid=res['txid'],
                 redeemable_amount=redeemable_amount
             ),
-            time=time
+            time=time_trade,
+            lag_after_update=lag_after_update
         )
 
     def fetch_excess_amounts(self, asa_price: float) -> RedeemedAmounts:
@@ -280,7 +283,8 @@ class SimulationSwapper(Swapper):
                 amount_buy_with_slippage=quote.quote.amount_out_with_slippage.amount,
                 amount_sell_with_slippage=quote.quote.amount_in_with_slippage.amount,
                 txid="",
-                redeemable_amount=None
+                redeemable_amount=-1
             ),
-            time=quote.time
+            time=quote.last_market_update_time,
+            lag_after_update=datetime.timedelta(seconds=0)
         )

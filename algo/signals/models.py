@@ -1,3 +1,6 @@
+import pandas as pd
+
+
 class RemoveIntercept:
     def __init__(self, pipeline):
         self.pipeline = pipeline
@@ -13,6 +16,26 @@ class RemoveIntercept:
         if attr == 'fit':
             return self.fit
         elif attr == 'predict':
+            return self.predict
+        elif attr == 'fit_predict':
+            raise NotImplementedError
+        else:
+            return getattr(self.pipeline, attr)
+
+
+class Demean:
+    def __init__(self, pipeline, weights):
+        self.pipeline = pipeline
+        self.weights = weights
+        self.wsums = weights.groupby('time_5min').sum()
+
+    def predict(self, X: pd.DataFrame):
+        y = pd.Series(self.pipeline.predict(X), index=X.index)
+        ywsums = (y * self.weights).groupby('time_5min').sum()
+        return y - ywsums/self.wsums
+
+    def __getattr__(self, attr):
+        if attr == 'predict':
             return self.predict
         elif attr == 'fit_predict':
             raise NotImplementedError

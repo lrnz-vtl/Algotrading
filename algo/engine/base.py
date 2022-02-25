@@ -24,7 +24,7 @@ def lag_ms(dt: datetime.timedelta):
 
 def validate_swap(opt_swap_quote: SwapQuote, current_mualgo_reserves: int,
                   current_asa_reserves: int, pos_impact_state: GlobalPositionAndImpactState,
-                  asset_id: int, time: datetime.datetime):
+                  asset_id: int):
     if opt_swap_quote.amount_out.asset.id == 0:
         out_reserves = current_mualgo_reserves
         sell_position = pos_impact_state.asa_states[asset_id].asa_position.value
@@ -37,7 +37,7 @@ def validate_swap(opt_swap_quote: SwapQuote, current_mualgo_reserves: int,
 
     assert opt_swap_quote.amount_out.amount <= out_reserves, \
         f"Buy amount:{opt_swap_quote.amount_out.amount} > pool reserve {out_reserves}: " \
-        f"for asset {opt_swap_quote.amount_out.asset.id} in pool {asset_id} at time {time}"
+        f"for asset {opt_swap_quote.amount_out.asset.id} in pool {asset_id}"
 
     assert opt_swap_quote.amount_in.amount <= sell_position
 
@@ -45,7 +45,6 @@ def validate_swap(opt_swap_quote: SwapQuote, current_mualgo_reserves: int,
 class BaseEngine(ABC):
     logger: logging.Logger
     asset_ids: list[int]
-    last_update_times: dict[int, datetime.datetime]
     prices: dict[int, PoolState]
     optimizers: dict[int, BaseOptimizer]
     signal_providers: dict[int, PriceSignalProvider]
@@ -64,25 +63,11 @@ class BaseEngine(ABC):
 
         log_state(StateLog(time_start, self.prices, self.pos_impact_state))
 
-        if (time_start - self.last_market_state_update).total_seconds() > LAG_TRADE_LIMIT_SECONDS:
-            self.logger.error('Error the market data is stale, skipping trading loop entirely')
-            return
-
         for asset_id in self.asset_ids:
 
-            if asset_id not in self.last_update_times:
+            if asset_id not in self.prices:
                 self.logger.warning(f'Price of {asset_id} has never been observed. Skipping trade logic')
                 continue
-
-            time_opt = self.current_time_prov()
-
-            try:
-                time_since_update = lag_ms(time_opt - self.last_update_times[asset_id])
-            except TypeError as e:
-                self.logger.critical(f'{time_opt}, {self.last_update_times[asset_id]}')
-                raise e
-
-            self.logger.debug(f'Entering trade logic for asset {asset_id}, market data is {time_since_update} ms old.')
 
             if asset_id not in self.prices:
                 self.logger.warning(f'Price for asset {asset_id} not in data, skipping the trade logic.')
@@ -90,8 +75,10 @@ class BaseEngine(ABC):
 
             opt = self.optimizers[asset_id]
 
+            time_pre_opt = self.current_time_prov()
+
             signal_bps = self.signal_providers[asset_id].value
-            impact_bps = self.pos_impact_state.asa_states[asset_id].impact.value(time_opt)
+            impact_bps = self.pos_impact_state.asa_states[asset_id].impact.value(time_pre_opt)
 
             current_asa_reserves = self.prices[asset_id].asset1_reserves
             current_mualgo_reserves = self.prices[asset_id].asset2_reserves
@@ -103,16 +90,23 @@ class BaseEngine(ABC):
                                                        current_asa_reserves=current_asa_reserves,
                                                        current_mualgo_reserves=current_mualgo_reserves,
                                                        slippage=self.slippage,
-                                                       time_dbg=time_opt)
+                                                       time_dbg=time_pre_opt)
+
+            time_opt = self.current_time_prov()
+            time_since_update = time_opt - self.last_market_state_update
+            if time_since_update.total_seconds() > LAG_TRADE_LIMIT_SECONDS:
+                self.logger.error('Error the market data is stale, exiting trade loop')
+                return
 
             if opt_swap_quote is not None:
 
-                timed_swap_quote = TimedSwapQuote(time_opt, opt_swap_quote,
+                timed_swap_quote = TimedSwapQuote(last_market_update_time=self.last_market_state_update,
+                                                  quote=opt_swap_quote,
                                                   mualgo_reserves_at_opt=current_mualgo_reserves,
                                                   asa_reserves_at_opt=current_asa_reserves)
 
                 validate_swap(opt_swap_quote, current_mualgo_reserves, current_asa_reserves,
-                              self.pos_impact_state, asset_id, timed_swap_quote.time)
+                              self.pos_impact_state, asset_id)
 
                 try:
                     maybe_swap: MaybeTradedSwap = self.swapper[asset_id].attempt_transaction(timed_swap_quote)
@@ -128,7 +122,7 @@ class BaseEngine(ABC):
                     continue
 
                 time_since_start = lag_ms(maybe_swap.time - time_start)
-                time_since_opt = lag_ms(maybe_swap.time - timed_swap_quote.time)
+                time_since_opt = lag_ms(maybe_swap.time - timed_swap_quote.last_market_update_time)
 
                 if maybe_swap.swap is not None:
 
@@ -136,9 +130,11 @@ class BaseEngine(ABC):
 
                     trade_costs = traded_swap.make_costs(current_asa_reserves, current_mualgo_reserves, impact_bps)
 
-                    trade_record = traded_swap.make_record(maybe_swap.time, asset_id)
+                    trade_record = traded_swap.make_record(time=maybe_swap.time,
+                                                           lag_after_update=maybe_swap.lag_after_update,
+                                                           asa_id=asset_id)
                     self.logger.info(
-                        f'Traded {time_since_start} ms after loop start, {time_since_opt} ms after optimisation'
+                        f'Traded {time_since_start} ms after loop start, {time_since_opt} ms after last market sync'
                         f'\n{trade_record}')
 
                     trade_info = TradeInfo(trade=trade_record,

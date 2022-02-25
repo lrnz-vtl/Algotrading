@@ -4,9 +4,11 @@ from algo.signals.evaluation import *
 from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
 from algo.signals.responses import SimpleResponse, TransformResponse, my_winsorize
 from algo.signals.weights import SimpleWeightMaker
+from algo.signals.models import RemoveIntercept
 from sklearn.linear_model import LinearRegression
 from algo.universe.universe import SimpleUniverse
 from pydantic import BaseModel
+from sklearn.pipeline import Pipeline
 
 smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack_noeth'
 
@@ -23,17 +25,21 @@ class TestAnalysisDs(unittest.TestCase):
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
-        ffill_price_minutes = 10
+        ffill_price_minutes = 'all'
+
+        market_lag_seconds = 60
+
+        self.winsor_limit = 0.06
 
         universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
 
         self.ds = AnalysisDataStore([price_cache], [], universe, SimpleWeightMaker(),
-                                    ffill_price_minutes=ffill_price_minutes)
-
+                                    ffill_price_minutes=ffill_price_minutes,
+                                    market_lag_seconds=market_lag_seconds)
         self.minutes = (30, 60, 120)
         self.featurizers = [MAPriceFeaturizer(m) for m in self.minutes]
 
-        respMaker = SimpleResponse(120, 5)
+        respMaker = SimpleResponse(120, 0)
         features = self.ds.make_asset_features(concat_featurizers(self.featurizers))
         response = self.ds.make_response(respMaker)
 
@@ -52,19 +58,26 @@ class TestAnalysisDs(unittest.TestCase):
         plt.show();
 
     def test_fit_and_validate_model(self):
-        model = WinsorizeResponse(LinearRegression())
+        pipeline = Pipeline(
+            (
+                ('linreg', RemoveIntercept(TransformResponse(LinearRegression(),
+                                                             resp_transform=lambda y: my_winsorize(y, (
+                                                             self.winsor_limit, self.winsor_limit))))),
+            )
+        )
 
         train_idx, test_idx = self.fitds.make_train_val_splits()
-        self.fitds.fit_and_eval_model(model, train_idx, test_idx)
+        self.fitds.fit_and_eval_model(pipeline, train_idx, test_idx, weight_argname=f'linreg__sample_weight')
 
-        self.logger.info(f'betas = {model.coef_}')
+        self.logger.info(f'betas = {pipeline.named_steps["linreg"].coef_}')
 
 
 class TestOOS(unittest.TestCase):
 
     def _make_fitds(self, price_cache: str):
         ds = AnalysisDataStore([price_cache], [], self.universe, SimpleWeightMaker(),
-                               ffill_price_minutes=self.ffill_price_minutes)
+                               ffill_price_minutes=self.ffill_price_minutes,
+                               market_lag_seconds=self.market_lag_seconds)
         features = ds.make_asset_features(concat_featurizers(self.featurizers))
         response = ds.make_response(self.respMaker)
         return ds.make_fittable_data(features, response, [RollingLiquidityFilter()], [], True)
@@ -72,27 +85,37 @@ class TestOOS(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
-        self.ffill_price_minutes = 10
+        self.ffill_price_minutes = 'all'
+
+        self.market_lag_seconds = 60
+        self.winsor_limit = 0.06
 
         self.universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
 
         self.minutes = (30, 60, 120)
         self.featurizers = [MAPriceFeaturizer(m) for m in self.minutes]
-        self.respMaker = SimpleResponse(120, 5)
+        self.respMaker = SimpleResponse(120, 0)
 
-        self.model = WinsorizeResponse(LinearRegression())
+        self.pipeline = Pipeline(
+            (
+                ('linreg', RemoveIntercept(TransformResponse(LinearRegression(),
+                                                             resp_transform=lambda y: my_winsorize(y, (
+                                                             self.winsor_limit, self.winsor_limit))))),
+            )
+        )
 
         super().__init__(*args, **kwargs)
 
     def test_oos(self):
         price_cache = '20220209_prehack'
         ds = self._make_fitds(price_cache)
-        self.model = ds.fit_model(self.model, ds.full_idx)
-        self.logger.info(f'betas = {self.model.coef_}')
+
+        self.pipeline = ds.fit_model(self.pipeline, ds.full_idx, weight_argname=f'linreg__sample_weight')
+        self.logger.info(f'betas = {self.pipeline.named_steps["linreg"].coef_}')
 
         price_cache_oos = '20220209'
         ds_oos = self._make_fitds(price_cache_oos)
-        ds_oos.test_model(self.model, ds_oos.full_idx)
+        ds_oos.test_model(self.pipeline, ds_oos.full_idx)
 
 
 class TestFitTrading(unittest.TestCase):

@@ -1,7 +1,7 @@
 import datetime
 from algo.blockchain.process_prices import PriceCacher
 from tinyman.v1.client import TinymanMainnetClient
-from algo.universe.universe import PoolIdStore
+from algo.universe.pools import PoolIdStore
 import argparse
 import logging
 

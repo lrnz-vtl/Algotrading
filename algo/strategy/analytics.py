@@ -28,16 +28,15 @@ def timestamp_to_5min(time_col: pd.Series):
     return pd.to_datetime(time_5min, unit='s', utc=True)
 
 
-def ffill_cols(df: pd.DataFrame, cols: list[str], minutes_limit: Union[int, str]):
+def ffill_cols(df: pd.DataFrame, cols: list[str], minutes_limit: Union[int, str], all_times=None):
+    if all_times is None:
+        all_times = []
+        delta = df['time_5min'].max() - df['time_5min'].min()
+        for i in range(int(delta.total_seconds() / (5 * 60))):
+            all_times.append(df['time_5min'].min() + i * datetime.timedelta(seconds=5 * 60))
 
-
-    all_times = []
-    delta = df['time_5min'].max() - df['time_5min'].min()
-    for i in range(int(delta.total_seconds() / (5 * 60))):
-        all_times.append(df['time_5min'].min() + i * datetime.timedelta(seconds=5 * 60))
-
-    all_times = pd.Series(all_times).rename('time_5min')
-    assert len(all_times) == len(set(all_times))
+        all_times = pd.Series(all_times).rename('time_5min')
+        assert len(all_times) == len(set(all_times))
 
     df = df.merge(all_times, on='time_5min', how='outer')
     df = df.sort_values(by='time_5min')

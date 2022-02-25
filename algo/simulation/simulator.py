@@ -12,7 +12,7 @@ from algo.universe.universe import SimpleUniverse
 from typing import Callable, Generator, Any, Optional, Type
 from algo.blockchain.utils import int_to_tzaware_utc_datetime
 from algo.trading.swapper import SimulationSwapper
-from algo.engine.base import BaseEngine
+from algo.engine.base import BaseEngine, LAG_TRADE_LIMIT_SECONDS
 
 
 class Simulator(BaseEngine):
@@ -77,12 +77,12 @@ class Simulator(BaseEngine):
                 initial_time = time
                 self._sim_time = time
 
-            assert time >= self._sim_time, f"{time}, {self._sim_time}"
+            assert time+datetime.timedelta(seconds=LAG_TRADE_LIMIT_SECONDS) >= self._sim_time, f"{time}, {self._sim_time}"
 
-            while self._sim_time + self.simulation_step < time:
+            while self._sim_time + self.simulation_step < time + datetime.timedelta(seconds=LAG_TRADE_LIMIT_SECONDS):
 
                 self._sim_time = self._sim_time + self.simulation_step
-                self.last_market_state_update = self._sim_time
+                self.last_market_state_update = self._sim_time - datetime.timedelta(seconds=LAG_TRADE_LIMIT_SECONDS)
 
                 # Trade only if we are not seeding
                 if self._sim_time - initial_time > self.seed_time:

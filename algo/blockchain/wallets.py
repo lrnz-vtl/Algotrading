@@ -6,6 +6,8 @@ from algo.blockchain.algo_requests import QueryParams
 from algo.blockchain.stream import DataStream
 from algo.strategy.analytics import ffill_cols, timestamp_to_5min
 from algo.tools.wallets import get_account_data
+from tinyman.v1.client import TinymanMainnetClient
+from algo.blockchain.mixedstream import TotalDataLoader
 
 
 class Wallet:
@@ -32,11 +34,11 @@ class Wallet:
                 all_times.append(df['time_5min'].min() + i * datetime.timedelta(seconds=5 * 60))
             all_times = pd.Series(all_times).rename('time_5min')
             assert len(all_times) == len(set(all_times))
-            res = ffill_cols(df, keys, m, all_times)
+            res = ffill_cols(df, keys, 'all', all_times)
             res['index'] = res['time_5min'].apply(datetime.datetime.timestamp)
             return res.set_index('index')
 
-        if after_time == None:
+        if after_time is None:
             after_time = datetime.datetime.fromtimestamp(price_df['time'].min())
         query_params = QueryParams(after_time=after_time)
         wallet = self.historical_numbers(query_params)
@@ -113,3 +115,75 @@ class Wallet:
 
     def __iter__(self) -> Iterable[Tuple[int, int]]:
         return iter(self.coins)
+
+
+class WalletValue:
+
+    def __init__(self, cache_name, address):
+        self.price_df = None
+        self.cache_name = cache_name
+        self.address = address
+
+        ffilt = lambda x, y: x == 0 or y == 0
+        self.tds = TotalDataLoader(cache_name, TinymanMainnetClient(), ffilt)
+
+    def update(self):
+        self.price_df = self.tds.load()
+
+    def hist_params(self, query_params):
+        datastream = DataStream.from_address(self.address, query_params)
+
+        txns = []
+
+        for _, txn in datastream.next_transaction():
+            time = txn['round-time']
+
+            if txn['tx-type'] == 'pay':
+                if txn['payment-transaction']['receiver'] == self.address:
+                    txns.append((0, - txn['payment-transaction']['amount'], time))
+                elif txn['sender'] == self.address:
+                    txns.append((0, txn['payment-transaction']['amount'] + txn['fee'], time))
+                else:
+                    raise ValueError('encountered invalid transaction')
+            elif txn['tx-type'] == 'axfer':
+                assetid = txn['asset-transfer-transaction']['asset-id']
+                if txn['asset-transfer-transaction']['receiver'] == self.address:
+                    txns.append((assetid, - txn['asset-transfer-transaction']['amount'], time))
+                elif txn['sender'] == self.address:
+                    txns.append((0, txn['fee'], time))
+                    txns.append((assetid, txn['asset-transfer-transaction']['amount'], time))
+                else:
+                    raise ValueError('encountered invalid transaction')
+            else:
+                if txn['sender'] == self.address:
+                    txns.append((0, txn['fee'], time))
+
+        return txns
+
+    def historical_wealth(self):
+        after_time = datetime.datetime.fromtimestamp(self.price_df['time'].min())
+        query_params = QueryParams(after_time=after_time)
+        txns = self.hist_params(query_params)
+
+        prices_table = self.price_df.copy()
+        prices_table['time_5min'] = prices_table['time'] // (5 * 60) * (5 * 60)
+        prices_table['price'] = prices_table['asset2_reserves'] / prices_table['asset1_reserves']
+        prices_table = prices_table.groupby(['asset1', 'time_5min'])['price'].mean()
+        prices_table = prices_table.unstack(level=0).fillna(method='ffill')
+        prices_table[0] = 1
+
+        positions_table = pd.DataFrame(0, index=prices_table.index, columns=prices_table.columns)
+        positions_table.head()
+        for asset, amount, time in txns:
+            positions_table.loc[positions_table.index >= time, asset] -= amount
+
+        wealth_table = (positions_table * prices_table) / 10 ** 6
+        wealth = wealth_table.sum(axis=1)
+        return wealth[wealth > 0]
+
+
+
+
+
+
+

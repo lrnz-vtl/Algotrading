@@ -37,6 +37,19 @@ class RollingLiquidityFilter(DataFilter):
         return (rol_min_liq / 10 ** 6) > self.algo_reserves_floor
 
 
+def lag_market_data(df: pd.DataFrame, lag_seconds: int):
+    df = df.copy()
+    df['time'] = df['time'] + lag_seconds
+    return df
+
+
+def process_dfs(dfp: pd.DataFrame, dfv: Optional[pd.DataFrame], ffill_price_minutes):
+    df = process_market_df(dfp, dfv, ffill_price_minutes)
+    df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
+    assert np.all(df['asset2'] == 0)
+    return df.drop(columns=['asset2', 'level_1'], errors='ignore')
+
+
 class AnalysisDataStore:
 
     def __init__(self,
@@ -44,28 +57,39 @@ class AnalysisDataStore:
                  volume_caches: list[str],
                  universe: SimpleUniverse,
                  weight_maker: BaseWeightMaker,
-                 ffill_price_minutes: Optional[Union[int,str]]):
+                 ffill_price_minutes: Optional[Union[int, str]],
+                 market_lag_seconds: int):
+
+        self.features_lag_seconds = market_lag_seconds
 
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
 
-        filter_ = make_filter_from_universe(universe)
-
-        dfp = join_caches_with_priority(price_caches, 'prices', filter_)
-        if volume_caches:
-            dfv = join_caches_with_priority(volume_caches, 'volumes', filter_)
-        else:
-            dfv = None
-
-        df = process_market_df(dfp, dfv, ffill_price_minutes)
-        df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
-        assert np.all(df['asset2'] == 0)
-        df = df.drop(columns=['asset2', 'level_1'], errors='ignore')
-
         asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools), "Need to provide a Universe with only Algo pools"
 
+        filter_ = make_filter_from_universe(universe)
+
+        dfp = join_caches_with_priority(price_caches, 'prices', filter_)
+        dfp_lagged = lag_market_data(dfp, self.features_lag_seconds)
+        if volume_caches:
+            dfv = join_caches_with_priority(volume_caches, 'volumes', filter_)
+            dfv_lagged = lag_market_data(dfv, self.features_lag_seconds)
+        else:
+            dfv = None
+            dfv_lagged = None
+
+        df = process_dfs(dfp, dfv, ffill_price_minutes)
+        df_lagged = process_dfs(dfp_lagged, dfv_lagged, ffill_price_minutes)
+
         df = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
+        df_lagged = df_lagged[df_lagged.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
+
+        idx = df.index.intersection(df_lagged.index)
+        df = df.loc[idx]
+        df_lagged = df_lagged.loc[idx]
+
+        assert np.all(df.index == df_lagged.index)
 
         df_ids = df.index.get_level_values(ASSET_INDEX_NAME).unique()
         missing_ids = [asset_id for asset_id in asset_ids if asset_id not in df_ids]
@@ -73,6 +97,7 @@ class AnalysisDataStore:
             self.logger.error(f"asset ids {missing_ids} are missing from the dataframe generated from the cache")
 
         self.df = df
+        self.df_lagged = df_lagged
         self.weights = weight_maker(df)
 
         assert self.df.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
@@ -81,7 +106,7 @@ class AnalysisDataStore:
         return response_maker(self.df['algo_price'])
 
     def make_asset_features(self, featurizer):
-        return self.df.groupby([ASSET_INDEX_NAME]).apply(lambda x: featurizer(x.droplevel(0)))
+        return self.df_lagged.groupby([ASSET_INDEX_NAME]).apply(lambda x: featurizer(x.droplevel(0)))
 
     def make_fittable_data(self,
                            features: pd.DataFrame, response: ComputedLookaheadResponse,
@@ -104,7 +129,8 @@ class AnalysisDataStore:
                          f'{self.weights[filt_idx].sum() / self.weights.sum()}')
 
         if filter_nan_responses:
-            self.logger.warning('Filtering nan responses, this could potentially introduce bias or throw away too much data')
+            self.logger.warning(
+                'Filtering nan responses, this could potentially introduce bias or throw away too much data')
             filt_idx = filt_idx & (~response.ts.isna())
 
             self.logger.info(f'Percentage of data retained after filtering nan responses: '
