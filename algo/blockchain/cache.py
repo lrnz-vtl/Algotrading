@@ -20,6 +20,12 @@ import uvloop
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
+def assert_date(date):
+    if isinstance(date, datetime.datetime):
+        assert date == datetime.datetime(year=date.year, month=date.month, day=date.day), \
+            f"date {date} must be dates without hours, minutes etc."
+
+
 class DateScheduler:
     def __init__(self,
                  date_min: datetime.datetime,
@@ -27,8 +33,7 @@ class DateScheduler:
 
         for date in date_min, date_max:
             if date is not None:
-                assert date == datetime.datetime(year=date.year, month=date.month, day=date.day), \
-                    f"date_min, date_max = {date_min}, {date_max} must be dates without hours, minutes etc."
+                assert_date(date)
 
         if date_max is None:
             utcnow = datetime.datetime.utcnow()
@@ -52,19 +57,44 @@ class DateScheduler:
         return needed_dates
 
 
-def get_existing_dates(cache_dir: str):
-    try:
-        with open(f'{cache_dir}.json') as json_file:
-            return eval(json.load(json_file))
-    except FileNotFoundError:
-        return set()
+class DateValidator:
+    def __init__(self, cache_basedir: str, cache_name: str, assets):
+        self.assets = assets
+        basedir = os.path.join(cache_basedir, cache_name)
+        assets = list(sorted(assets, reverse=True))
+        cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
+        os.makedirs(cache_dir, exist_ok=True)
+        self.cache_dir = cache_dir
 
+    def get_existing_dates(self):
+        try:
+            with open(f'{self.cache_dir}.json') as json_file:
+                return eval(json.load(json_file))
+        except FileNotFoundError:
+            return set()
 
-def add_fetched_date(cache_dir: str, date):
-    existing_dates = get_existing_dates(cache_dir)
-    with open(f'{cache_dir}.json', 'w') as json_file:
-        existing_dates.add(date)
-        json.dump(existing_dates, json_file, default=str)
+    def add_fetched_date(self, date):
+        if isinstance(date, datetime.datetime):
+            assert_date(date)
+            date = date.date()
+        existing_dates = self.get_existing_dates()
+        with open(f'{self.cache_dir}.json', 'w') as json_file:
+            existing_dates.add(date)
+            json.dump(existing_dates, json_file, default=str)
+
+    def has_gaps(self) -> bool:
+        existing_dates = self.get_existing_dates()
+        try:
+            date = min(existing_dates)
+        except TypeError as e:
+            print(existing_dates, self.assets)
+            raise e
+        date_max = max(existing_dates)
+        while date < date_max:
+            if date not in existing_dates:
+                return True
+            date = date + datetime.timedelta(days=1)
+        return False
 
 
 async def groupby_days(gen: AsyncGenerator):
@@ -108,21 +138,21 @@ class DataCacher(ABC):
 
         async def main():
             async with aiohttp.ClientSession() as session:
-                await asyncio.gather(*[self._cache_pool(session, assets, basedir) for assets in self.pools])
+                await asyncio.gather(*[self._cache_pool(session, assets, cache_name) for assets in self.pools])
 
         uvloop.install()
 
         asyncio.run(main())
 
-    async def _cache_pool(self, session, assets, basedir):
+    async def _cache_pool(self, session, assets, cache_name):
         assets = list(sorted(assets, reverse=True))
-        cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
-        os.makedirs(cache_dir, exist_ok=True)
+
+        dv = DateValidator(self.cache_basedir, cache_name, assets)
 
         def file_name(date):
-            return os.path.join(cache_dir, f'{date}.parquet')
+            return os.path.join(dv.cache_dir, f'{date}.parquet')
 
-        existing_dates = get_existing_dates(cache_dir)
+        existing_dates = dv.get_existing_dates()
 
         dates_to_fetch = self.dateScheduler.get_dates_to_fetch(existing_dates)
         if len(dates_to_fetch) == 0:
@@ -158,5 +188,11 @@ class DataCacher(ABC):
             assert len(dates) == 1, f"{dates}"
             date = dates[0]
             cache_day_df(df, date)
-            add_fetched_date(cache_dir, date)
+            dv.add_fetched_date(date)
             self.logger.info(f'Cached date {date} for assets {assets}')
+
+        # Assume previous opearation was successful, fill the missing dates even if there is not data
+        existing_dates = dv.get_existing_dates()
+        for date in dates_to_fetch:
+            if date not in existing_dates:
+                dv.add_fetched_date(date)

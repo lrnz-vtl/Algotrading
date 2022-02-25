@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 from algo.universe.assets import get_asset_name, get_decimals
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
+from algo.blockchain.utils import load_algo_pools
+from algo.dataloading.caching import make_filter_from_universe
 from algo.blockchain.wallets import Wallet
 from algo.universe.universe import SimpleUniverse
 import argparse, datetime

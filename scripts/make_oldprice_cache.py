@@ -1,6 +1,6 @@
 import datetime
 import logging
-from algo.universe.universe import PoolIdStore
+from algo.universe.pools import PoolIdStore
 from algo.blockchain.process_prices import PriceCacher
 from tinyman_old.v1.client import TinymanMainnetClient as TinymanOldnetClient
 import argparse

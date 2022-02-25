@@ -9,7 +9,8 @@ from algo.blockchain.stream import PoolState, PriceUpdate, stream_from_price_df
 from algo.universe.universe import SimpleUniverse
 from dataclasses import dataclass
 from datetime import timezone
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
+from algo.blockchain.utils import load_algo_pools
+from algo.dataloading.caching import make_filter_from_universe
 from algo.simulation.simulator import Simulator
 from algo.universe.pools import PoolId
 from algo.blockchain.utils import datetime_to_int

@@ -2,13 +2,13 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
-from algo.blockchain.utils import make_filter_from_universe, join_caches_with_priority
+from algo.dataloading.caching import join_caches_with_priority, make_filter_from_universe
 from algo.strategy.analytics import process_market_df
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.weights import BaseWeightMaker
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 from algo.universe.universe import SimpleUniverse
-from typing import Optional
+from typing import Optional, Union
 from algo.signals.evaluation import FittableDataStore
 from abc import ABC, abstractmethod
 from ts_tools_algo.series import rolling_min
@@ -44,7 +44,7 @@ class AnalysisDataStore:
                  volume_caches: list[str],
                  universe: SimpleUniverse,
                  weight_maker: BaseWeightMaker,
-                 ffill_price_minutes: Optional[int]):
+                 ffill_price_minutes: Optional[Union[int,str]]):
 
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
@@ -87,7 +87,8 @@ class AnalysisDataStore:
                            features: pd.DataFrame, response: ComputedLookaheadResponse,
                            trading_filters: list[DataFilter],
                            feature_filters: list[DataFilter],
-                           filter_nan_responses: bool = False
+                           filter_nan_responses: bool = False,
+                           filter_nan_features: bool = False
                            ) -> FittableDataStore:
 
         assert np.all(response.ts.index == self.df.index)
@@ -109,9 +110,15 @@ class AnalysisDataStore:
             self.logger.info(f'Percentage of data retained after filtering nan responses: '
                              f'{self.weights[filt_idx].sum() / self.weights.sum()}')
 
+        if filter_nan_features:
+            filt_idx = filt_idx & (~features.isna().any(axis=1))
+            self.logger.info(f'Percentage of data retained after filtering nan features: '
+                             f'{self.weights[filt_idx].sum() / self.weights.sum()}')
+
         prefilter_ids = set(self.weights.index.get_level_values(ASSET_INDEX_NAME).unique())
         postfilter_ids = set(self.weights[filt_idx].index.get_level_values(ASSET_INDEX_NAME).unique())
-        self.logger.warning(f'After filtering some ids were dropped! {prefilter_ids}, {postfilter_ids}')
+        if prefilter_ids != postfilter_ids:
+            self.logger.warning(f'After filtering some ids were dropped! {prefilter_ids}, {postfilter_ids}')
 
         return FittableDataStore(features[filt_idx],
                                  ComputedLookaheadResponse(response.ts[filt_idx], response.lookahead_time),

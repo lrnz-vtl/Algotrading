@@ -4,7 +4,7 @@ import datetime
 import numpy as np
 from algo.universe.assets import get_asset_name, get_decimals
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Union
 
 
 def make_algo_pricevolume(df):
@@ -28,28 +28,8 @@ def timestamp_to_5min(time_col: pd.Series):
     return pd.to_datetime(time_5min, unit='s', utc=True)
 
 
-def ffill_cols(df: pd.DataFrame, cols: list[str], minutes_limit: int, all_times: pd.Series):
-    assert (minutes_limit % 5 == 0)
+def ffill_cols(df: pd.DataFrame, cols: list[str], minutes_limit: Union[int, str]):
 
-    df = df.merge(all_times, on='time_5min', how='outer')
-    df = df.sort_values(by='time_5min')
-
-    df['time_5min_ffilled'] = df['time_5min'].fillna(method='ffill')
-
-    timelimit_idx = ((df['time_5min'] - df['time_5min_ffilled']) <= datetime.timedelta(minutes=minutes_limit))
-
-    for col in cols:
-        fill_idx = timelimit_idx & df[col].isna()
-        col_ffilled = df[col].fillna(method='ffill')
-        df.loc[fill_idx, col] = col_ffilled[fill_idx]
-
-    return df
-
-
-def ffill_prices(df: pd.DataFrame, minutes_limit: int):
-    cols = ['asset1_reserves', 'asset2_reserves']
-
-    assert ~df[cols].isna().any().any()
 
     all_times = []
     delta = df['time_5min'].max() - df['time_5min'].min()
@@ -59,17 +39,41 @@ def ffill_prices(df: pd.DataFrame, minutes_limit: int):
     all_times = pd.Series(all_times).rename('time_5min')
     assert len(all_times) == len(set(all_times))
 
+    df = df.merge(all_times, on='time_5min', how='outer')
+    df = df.sort_values(by='time_5min')
+
+    df['time_5min_ffilled'] = df['time_5min'].fillna(method='ffill')
+
+    if isinstance(minutes_limit, int):
+        assert (minutes_limit % 5 == 0)
+        timelimit_idx = ((df['time_5min'] - df['time_5min_ffilled']) <= datetime.timedelta(minutes=minutes_limit))
+    elif minutes_limit == 'all':
+        timelimit_idx = pd.Series(True, index=df.index)
+    else:
+        raise ValueError
+
+    for col in cols:
+        fill_idx = timelimit_idx & df[col].isna()
+        col_ffilled = df[col].fillna(method='ffill')
+        df.loc[fill_idx, col] = col_ffilled[fill_idx]
+
+    return df
+
+
+def ffill_prices(df: pd.DataFrame, minutes_limit: Union[int, str]):
+    cols = ['asset1_reserves', 'asset2_reserves']
+
+    assert ~df[cols].isna().any().any()
+
     ret: pd.DataFrame = df.groupby('asset1').apply(
-            lambda x: ffill_cols(x.drop(columns=['asset1']), cols, minutes_limit, all_times)).reset_index()
+        lambda x: ffill_cols(x.drop(columns=['asset1']), cols, minutes_limit)).reset_index()
     ret = ret.dropna(subset=cols)
     ret['asset2'] = 0
     return ret
 
 
-
-
 def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
-                      ffill_price_minutes: Optional[int],
+                      ffill_price_minutes: Optional[Union[int, str]],
                       merge_how='left'
                       ):
     logger = logging.getLogger(__name__)

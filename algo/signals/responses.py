@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 import datetime
 import numpy as np
@@ -61,23 +63,28 @@ class SimpleResponse(LookaheadResponse):
         return resp
 
 
-class WinsorizeResponse:
-    def __init__(self, pipeline):
+def my_winsorize(y):
+    resp = y.copy()
+    mask = ~np.isnan(resp)
+    resp[mask] = winsorize(resp[mask], limits=(0.05, 0.05))
+    return resp
+
+
+class TransformResponse:
+    def __init__(self, pipeline, resp_transform):
         self.pipeline = pipeline
+        self.resp_transorm = resp_transform
 
     def fit(self, X, y, **kwargs):
-        resp = y.copy()
-        mask = ~np.isnan(resp)
-        resp[mask] = winsorize(resp[mask], limits=(0.05, 0.05))
-        self.pipeline.fit(X, resp, **kwargs)
+        self.pipeline.fit(X, self.resp_transorm(y), **kwargs)
         return self
 
     def fit_transform(self, X, y, **kwargs):
-        self.pipeline = self.fit(X, y, **kwargs)
+        self.fit(X, y, **kwargs)
         return self.transform(X)
 
     def fit_predict(self, X, y, **kwargs):
-        self.pipeline = self.fit(X, y, **kwargs)
+        self.fit(X, y, **kwargs)
         return self.predict(X)
 
     def __getattr__(self, attr):

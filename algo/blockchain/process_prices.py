@@ -76,7 +76,7 @@ class PriceScraper(DataScraper):
         pool = client.fetch_pool(asset1_id, asset2_id)
 
         if not pool.exists:
-            raise NotExistentPoolError()
+            raise NotExistentPoolError(f"{asset1_id}, {asset2_id}")
         self.liquidity_asset = pool.liquidity_asset.id
 
         self.assets = [asset1_id, asset2_id]
@@ -137,4 +137,6 @@ class PriceCacher(DataCacher):
         try:
             return PriceScraper(self.client, asset1_id, asset2_id)
         except NotExistentPoolError as e:
+            self.logger.critical(f'Pool does not exist: {e}')
             return None
+

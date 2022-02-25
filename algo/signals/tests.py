@@ -2,7 +2,7 @@ import unittest
 from algo.signals.datastore import AnalysisDataStore, RollingLiquidityFilter
 from algo.signals.evaluation import *
 from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
-from algo.signals.responses import SimpleResponse, WinsorizeResponse
+from algo.signals.responses import SimpleResponse, TransformResponse, my_winsorize
 from algo.signals.weights import SimpleWeightMaker
 from sklearn.linear_model import LinearRegression
 from algo.universe.universe import SimpleUniverse
@@ -133,6 +133,6 @@ class TestFitTrading(unittest.TestCase):
         plt.show()
 
         model = fitds.fit_model(model, fitds.full_idx)
-        self.logger.info(model.coef_)
+        self.logger.info(model.coef_, model.intercept_)
 
         fitds.test_model(model, fitds.full_idx)

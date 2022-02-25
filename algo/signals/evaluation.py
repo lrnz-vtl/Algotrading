@@ -23,15 +23,46 @@ def not_nan_mask(*vecs):
     return ~np.any([any_axis_1(np.isnan(x)) for x in vecs], axis=0)
 
 
-def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
+def plot_bins(x, y, w, nbins=20):
+    sort_idx = x.sort_values().index
+    wbins = pd.cut(w[sort_idx].cumsum(), bins=nbins)
+
+    xsums = (x * w).groupby(wbins).sum()
+    ysums = (y * w).groupby(wbins).sum()
+    wsums = w.groupby(wbins).sum()
+
+    x = xsums / wsums
+    y = ysums / wsums
+
+    xmin = min(x)
+    xmax = max(x)
+    xs = np.linspace(xmin, xmax, 100)
+
+    plt.plot(x, y)
+    plt.plot(xs, xs, ls='--', c='k')
+    plt.grid()
+
+
+def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports=True):
+    y_pred = pd.Series(m.predict(X_test), index=X_test.index)
+    oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
+
+    if not reports:
+        return oos_rsq
+
     logger = logging.getLogger(__name__)
     ads = get_asset_datastore()
 
-    y_pred = m.predict(X_test)
-    oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
     logger.info(f'OOS R^2 = {oos_rsq}')
 
     sig = m.predict(X_full)
+
+    mean = (sig * w_full).sum() / w_full.sum()
+    std = np.sqrt((w_full * (sig - mean) ** 2).sum() / w_full.sum())
+    logger.info(f'mean = {mean}, std = {std}')
+
+    plot_bins(y_pred, y_test, w_test)
+
     xxw = w_full * sig ** 2
     xyw = w_full * sig * y_full
 
@@ -56,6 +87,8 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full):
     plt.grid()
     plt.show()
 
+    return oos_rsq
+
 
 class FittableDataStore:
 
@@ -77,6 +110,7 @@ class FittableDataStore:
 
     def bootstrap_arrays(self, n: int, *vecs):
         assets = self.weights.index.get_level_values(0).unique()
+        np.random.seed(42)
         for i in range(n):
             boot_assets = np.random.choice(assets, len(assets))
             yield tuple(
@@ -95,6 +129,31 @@ class FittableDataStore:
                 betas[i] = LinearRegression().fit(x[:, None], y, w).coef_
 
             yield betas
+
+    def eval_features(self):
+        cols = self.features.columns
+        ncols = len(cols)
+        f, axs = plt.subplots(1, ncols, figsize=(4 * ncols, 5))
+
+        corr_df = pd.DataFrame(index=cols, columns=cols)
+        w = self.weights
+        for i, colx in enumerate(cols):
+            for coly in cols[i + 1:]:
+                x = self.features[colx]
+                y = self.features[coly]
+                xmean = (x * w).sum()/w.sum()
+                ymean = (y * w).sum()/w.sum()
+                corr_df.loc[colx, coly] = (w * (x - xmean) * (y - ymean)).sum() / \
+                                          np.sqrt((w * (x - xmean) ** 2).sum() * (w * (y - ymean) ** 2).sum())
+                corr_df.loc[coly, colx] = corr_df.loc[colx, coly]
+            corr_df.loc[colx, colx] = 1
+        print(corr_df)
+
+        for betas, ax, name in zip(self.bootstrap_betas(), axs, self.features.columns):
+            ax.hist(betas)
+            ax.set_title(f'{name}')
+            ax.grid()
+        plt.show();
 
     def make_train_val_splits(self, val_frac=0.33):
 
@@ -120,24 +179,29 @@ class FittableDataStore:
 
         return train_idx, test_idx
 
+    def predict(self, m, test_idx):
+        return pd.Series(m.predict(self.features[test_idx]), index=test_idx.index)
+
     def test_model(self, m, test_idx):
         return eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
                                  self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx])
 
-    def fit_model(self, model, train_idx):
+    def fit_model(self, model, train_idx, reports=True, weight_argname='sample_weight'):
 
         X_train = self.features[train_idx]
         y_train = self.response.ts[train_idx]
         w_train = self.weights[train_idx]
 
-        pca = PCA().fit(X_train)
-        self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
+        if reports:
+            pca = PCA().fit(X_train)
+            self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
 
-        return model.fit(X_train, y_train, sample_weight=w_train)
+        weight_arg = {weight_argname: w_train}
+        return model.fit(X_train, y_train, **weight_arg)
 
-    def fit_and_eval_model(self, model, train_idx, test_idx):
+    def fit_and_eval_model(self, model, train_idx, test_idx, reports=True, weight_argname='sample_weight'):
 
-        m = self.fit_model(model, train_idx)
+        m = self.fit_model(model, train_idx, reports=reports, weight_argname=weight_argname)
 
-        eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
-                          self.features, self.response.ts, self.weights)
+        return eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
+                                 self.features, self.response.ts, self.weights, reports=reports)

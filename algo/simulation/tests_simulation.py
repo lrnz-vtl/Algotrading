@@ -10,7 +10,8 @@ from algo.trading.signalprovider import DummySignalProvider, EmaSignalProvider, 
 from algo.blockchain.stream import stream_from_price_df
 from datetime import timezone
 from algo.universe.universe import SimpleUniverse
-from algo.blockchain.utils import load_algo_pools, make_filter_from_universe
+from algo.blockchain.utils import load_algo_pools
+from algo.dataloading.caching import make_filter_from_universe
 from algo.simulation.simulator import Simulator
 from algo.optimizer.optimizerV2 import OptimizerV2
 import logging
