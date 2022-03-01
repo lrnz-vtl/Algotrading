@@ -10,7 +10,7 @@ from algo.universe.universe import SimpleUniverse
 from pydantic import BaseModel
 from sklearn.pipeline import Pipeline
 
-smalluniverse_cache_name = 'liquid_algo_pools_nousd_prehack_noeth'
+smalluniverse_cache_name1 = 'liquid_algo_pools_nousd_prehack_noeth'
 
 
 class EMALinearStrategy(BaseModel):
@@ -74,8 +74,9 @@ class TestAnalysisDs(unittest.TestCase):
 
 class TestOOS(unittest.TestCase):
 
-    def _make_fitds(self, price_cache: str):
-        ds = AnalysisDataStore([price_cache], [], self.universe, SimpleWeightMaker(),
+    def _make_fitds(self, price_cache: str, universe_name: str):
+        universe = SimpleUniverse.from_cache(universe_name)
+        ds = AnalysisDataStore([price_cache], [], universe, SimpleWeightMaker(),
                                ffill_price_minutes=self.ffill_price_minutes,
                                market_lag_seconds=self.market_lag_seconds)
         features = ds.make_asset_features(concat_featurizers(self.featurizers))
@@ -89,8 +90,6 @@ class TestOOS(unittest.TestCase):
 
         self.market_lag_seconds = 60
         self.winsor_limit = 0.06
-
-        self.universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
 
         self.minutes = (30, 60, 120)
         self.featurizers = [MAPriceFeaturizer(m) for m in self.minutes]
@@ -108,13 +107,16 @@ class TestOOS(unittest.TestCase):
 
     def test_oos(self):
         price_cache = '20220209_prehack'
-        ds = self._make_fitds(price_cache)
+        universe_name = 'liquid_algo_pools_nousd_prehack_noeth'
+        ds = self._make_fitds(price_cache, universe_name)
 
         self.pipeline = ds.fit_model(self.pipeline, ds.full_idx, weight_argname=f'linreg__sample_weight')
         self.logger.info(f'betas = {self.pipeline.named_steps["linreg"].coef_}')
 
-        price_cache_oos = '20220209'
-        ds_oos = self._make_fitds(price_cache_oos)
+        # price_cache_oos = '20220209'
+        universe_name = 'update_20220225'
+        price_cache_oos = '20220225'
+        ds_oos = self._make_fitds(price_cache_oos, universe_name)
         ds_oos.test_model(self.pipeline, ds_oos.full_idx)
 
 

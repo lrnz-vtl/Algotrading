@@ -1,4 +1,6 @@
 import logging
+from typing import Optional, Callable
+
 import pandas as pd
 import datetime
 import numpy as np
@@ -31,14 +33,17 @@ def plot_bins(x, y, w, nbins=20):
     ysums = (y * w).groupby(wbins).sum()
     wsums = w.groupby(wbins).sum()
 
-    x = xsums / wsums
-    y = ysums / wsums
+    # ymedian = y.groupby(wbins).median()
 
-    xmin = min(x)
-    xmax = max(x)
+    xp = xsums / wsums
+    yp = ysums / wsums
+
+    xmin = min(xp)
+    xmax = max(xp)
     xs = np.linspace(xmin, xmax, 100)
 
-    plt.plot(x, y)
+    plt.plot(xp, yp, label='mean')
+    # plt.plot(xp, ymedian, label='median')
     plt.plot(xs, xs, ls='--', c='k')
     plt.grid()
 
@@ -70,6 +75,9 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports
     cols = len(asset_ids)
     f, axs = plt.subplots(1, cols, figsize=(10 * cols, 4))
 
+    if cols == 1:
+        axs = [axs]
+
     for asset, ax in zip(asset_ids, axs):
         xxw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='signal', ax=ax)
         xyw.loc[asset].groupby(TIME_INDEX_NAME).sum().cumsum().plot(label='response', ax=ax)
@@ -90,19 +98,94 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports
     return oos_rsq
 
 
+def cov(x, y, w):
+    xmean = (x * w).sum() / w.sum()
+    ymean = (y * w).sum() / w.sum()
+    return (w * (x - xmean) * (y - ymean)).sum() / w.sum()
+
+
+def corr(x, y, w):
+    xmean = (x * w).sum() / w.sum()
+    ymean = (y * w).sum() / w.sum()
+    return (w * (x - xmean) * (y - ymean)).sum() / \
+           np.sqrt((w * (x - xmean) ** 2).sum() * (w * (y - ymean) ** 2).sum())
+
+
+def bootstrap_arrays(n: int, index: pd.Index, *vecs: pd.Series):
+    assets = index.get_level_values(0).unique()
+    np.random.seed(42)
+    for i in range(n):
+        boot_assets = np.random.choice(assets, len(assets))
+        yield tuple(
+            np.concatenate([vec[index.get_loc(boot_asset)] for boot_asset in boot_assets]) for vec in vecs)
+
+
+def bootstrap_betas(features: pd.DataFrame, response: pd.Series, weights: pd.Series):
+    for col in features.columns:
+        N = 100
+        betas = np.zeros(N)
+
+        for i, (x, y, w) in enumerate(bootstrap_arrays(N, features.index, features[col], response, weights)):
+            mask = not_nan_mask(x, y, w)
+            x, y, w = x[mask], y[mask], w[mask]
+            betas[i] = LinearRegression().fit(x[:, None], y, w).coef_
+
+        yield betas
+
+
+def make_train_val_splits(response: ComputedLookaheadResponse, weights: pd.Series, oos_start_time: datetime.datetime, val_frac=0.3):
+    logger = logging.getLogger(__name__)
+
+    lookahead_time = response.lookahead_time + datetime.timedelta(minutes=5)
+
+    upper_val_ts = oos_start_time - lookahead_time
+
+    is_weights = weights[weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts]
+    is_weights = is_weights.groupby(TIME_INDEX_NAME).agg(sum).sort_index()
+
+    val_idx = (is_weights.cumsum() / is_weights.sum() >= 1-val_frac)
+    first_val_ts = val_idx[val_idx].index.get_level_values(TIME_INDEX_NAME).min()
+    upper_train_ts = first_val_ts - lookahead_time
+
+    train_idx = weights.index.get_level_values(TIME_INDEX_NAME) <= upper_train_ts
+    val_idx = (weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts) & \
+              (weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts)
+
+    assert len(weights) > train_idx.sum() + val_idx.sum()
+    assert ~np.any(train_idx & val_idx)
+
+    logger.info(f'Train, val size = {train_idx.sum()}, {val_idx.sum()}')
+
+    train_times = weights[train_idx].index.get_level_values(TIME_INDEX_NAME)
+    test_times = weights[val_idx].index.get_level_values(TIME_INDEX_NAME)
+    oos_times = weights[weights.index.get_level_values(TIME_INDEX_NAME) > oos_start_time].index.get_level_values(TIME_INDEX_NAME)
+    assert train_times.max() < test_times.min(), f"{train_times.max()}, {test_times.min()}"
+    assert test_times.max() < oos_times.min()
+    logger.info(f'Train times = {train_times.min(), train_times.max()}, '
+                f'val times = {test_times.min(), test_times.max()}')
+
+    return train_idx, val_idx
+
+
 class FittableDataStore:
 
-    def __init__(self, features: pd.DataFrame, response: ComputedLookaheadResponse, weights: pd.Series):
+    def __init__(self, features: pd.DataFrame, response: ComputedLookaheadResponse, weights: pd.Series,
+                 oos_start_time: datetime.datetime):
         client = TinymanMainnetClient()
         self.ads = AssetDataStore(client)
 
-        assert np.all(features.index == response.ts.index)
+        assert np.all(features.index == response.index)
         assert np.all(features.index == weights.index)
-        assert np.all(response.ts.index == weights.index)
+        assert np.all(response.index == weights.index)
 
         self.features = features
         self.response = response
         self.weights = weights
+
+        self.oos_start_time = oos_start_time
+
+        self.oos_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= self.oos_start_time
+        self.is_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) <= self.oos_start_time - response.lookahead_time - datetime.timedelta(minutes=5)
 
         self.logger = logging.getLogger(__name__)
 
@@ -118,17 +201,7 @@ class FittableDataStore:
                 vecs)
 
     def bootstrap_betas(self):
-
-        for col in self.features.columns:
-            N = 100
-            betas = np.zeros(N)
-
-            for i, (x, y, w) in enumerate(self.bootstrap_arrays(N, self.features[col], self.response.ts, self.weights)):
-                mask = not_nan_mask(x, y, w)
-                x, y, w = x[mask], y[mask], w[mask]
-                betas[i] = LinearRegression().fit(x[:, None], y, w).coef_
-
-            yield betas
+        return bootstrap_betas(self.features, self.response, self.weights)
 
     def eval_features(self):
         cols = self.features.columns
@@ -141,10 +214,7 @@ class FittableDataStore:
             for coly in cols[i + 1:]:
                 x = self.features[colx]
                 y = self.features[coly]
-                xmean = (x * w).sum()/w.sum()
-                ymean = (y * w).sum()/w.sum()
-                corr_df.loc[colx, coly] = (w * (x - xmean) * (y - ymean)).sum() / \
-                                          np.sqrt((w * (x - xmean) ** 2).sum() * (w * (y - ymean) ** 2).sum())
+                corr_df.loc[colx, coly] = corr(x, y, w)
                 corr_df.loc[coly, colx] = corr_df.loc[colx, coly]
             corr_df.loc[colx, colx] = 1
         print(corr_df)
@@ -155,41 +225,22 @@ class FittableDataStore:
             ax.grid()
         plt.show();
 
-    def make_train_val_splits(self, val_frac=0.33):
+    def make_train_val_splits(self, val_frac=0.3):
 
-        lookahead_time = self.response.lookahead_time
-        sorted_ts = sorted(self.weights.index.get_level_values(TIME_INDEX_NAME))
-
-        i = int(len(sorted_ts) * (1 - val_frac))
-        first_val_ts = sorted_ts[i]
-        upper_train_ts = first_val_ts - lookahead_time
-
-        train_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) < upper_train_ts
-        test_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts
-
-        assert len(self.weights) > train_idx.sum() + test_idx.sum()
-        assert ~np.any(train_idx & test_idx)
-
-        self.logger.info(f'Train, val size = {train_idx.sum()}, {test_idx.sum()}')
-
-        train_times = self.weights[train_idx].index.get_level_values(TIME_INDEX_NAME)
-        test_times = self.weights[test_idx].index.get_level_values(TIME_INDEX_NAME)
-        assert train_times.max() < test_times.min()
-        self.logger.info(f'Max train time = {train_times.max()}, Min test time = {test_times.min()}')
-
-        return train_idx, test_idx
+        return make_train_val_splits(self.response, self.weights, val_frac=val_frac, oos_start_time=self.oos_start_time)
 
     def predict(self, m, test_idx):
         return pd.Series(m.predict(self.features[test_idx]), index=test_idx.index)
 
     def test_model(self, m, test_idx):
-        return eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
-                                 self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx])
+        return eval_fitted_model(m, self.features[test_idx], self.response[test_idx], self.weights[test_idx],
+                                 self.features[test_idx], self.response[test_idx], self.weights[test_idx])
 
-    def fit_model(self, model, train_idx, reports=True, weight_argname='sample_weight'):
+    def fit_model(self, model, train_idx, fitted_response_transform: Optional[Callable[[pd.Series], pd.Series]],
+                  reports=True, weight_argname='sample_weight'):
 
         X_train = self.features[train_idx]
-        y_train = self.response.ts[train_idx]
+        y_train = fitted_response_transform(self.response[train_idx])
         w_train = self.weights[train_idx]
 
         if reports:
@@ -199,9 +250,17 @@ class FittableDataStore:
         weight_arg = {weight_argname: w_train}
         return model.fit(X_train, y_train, **weight_arg)
 
-    def fit_and_eval_model(self, model, train_idx, test_idx, reports=True, weight_argname='sample_weight'):
+    def fit_and_eval_model(self, model, train_idx, test_idx,
+                           fitted_response_transform: Optional[Callable[[pd.Series], pd.Series]],
+                           test_only=False, reports=True, weight_argname='sample_weight'):
 
-        m = self.fit_model(model, train_idx, reports=reports, weight_argname=weight_argname)
+        m = self.fit_model(model, train_idx, fitted_response_transform=fitted_response_transform,
+                           reports=reports, weight_argname=weight_argname)
 
-        return eval_fitted_model(m, self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx],
-                                 self.features, self.response.ts, self.weights, reports=reports)
+        if test_only:
+            Xfull, yfull, wfull = self.features[test_idx], self.response[test_idx], self.weights[test_idx]
+        else:
+            Xfull, yfull, wfull = self.features, self.response, self.weights
+
+        return eval_fitted_model(m, self.features[test_idx], self.response[test_idx], self.weights[test_idx],
+                                 Xfull, yfull, wfull, reports=reports)

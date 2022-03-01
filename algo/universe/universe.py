@@ -1,6 +1,9 @@
 from __future__ import annotations
 import os.path
-from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, load_pool_info
+
+from tinyman.v1.client import TinymanClient
+
+from algo.universe.pools import PoolInfo, PoolInfoStore, PoolId, load_pool_info, PoolIdStore
 import json
 import dataclasses
 
@@ -18,6 +21,11 @@ class SimpleUniverse:
     def from_cache(universe_cache_name: str) -> SimpleUniverse:
         cache_file = os.path.join(SIMPLEUNIVERSE_CACHE_BASEDIR, universe_cache_name, 'universe.json')
         pool_store = load_pool_info(cache_file)
+        return SimpleUniverse(pool_store.pools)
+
+    @staticmethod
+    def from_id_list(ids: list[int], client: TinymanClient) -> SimpleUniverse:
+        pool_store = PoolIdStore.from_id_list(ids, client)
         return SimpleUniverse(pool_store.pools)
 
 

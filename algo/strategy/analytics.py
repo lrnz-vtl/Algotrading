@@ -3,7 +3,6 @@ import pandas as pd
 import datetime
 import numpy as np
 from algo.universe.assets import get_asset_name, get_decimals
-from abc import ABC, abstractmethod
 from typing import Optional, Union
 
 
@@ -19,7 +18,10 @@ def make_algo_pricevolume(df):
 
         return subdf
 
-    return df.groupby('asset1').apply(lambda x: foo(x, x.name))
+    df = df.groupby('asset1').apply(lambda x: foo(x, x.name))
+    volcols = ['algo_volume', 'asset1_amount', 'asset2_amount']
+    df[volcols] = df[volcols].fillna(0)
+    return df
 
 
 def timestamp_to_5min(time_col: pd.Series):
@@ -73,7 +75,8 @@ def ffill_prices(df: pd.DataFrame, minutes_limit: Union[int, str]):
 
 def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
                       ffill_price_minutes: Optional[Union[int, str]],
-                      merge_how='left'
+                      price_agg_fun='mean',
+                      merge_how='left',
                       ):
     logger = logging.getLogger(__name__)
 
@@ -82,7 +85,7 @@ def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
     keys = ['time_5min', 'asset1', 'asset2']
 
     price_cols = ['asset1_reserves', 'asset2_reserves']
-    price_df = price_df[price_cols + keys].groupby(keys).agg('mean').reset_index()
+    price_df = price_df[price_cols + keys].groupby(keys).agg(price_agg_fun).reset_index()
 
     if ffill_price_minutes:
         in_shape = price_df.shape[0]
@@ -95,13 +98,10 @@ def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
         for col in volume_cols:
             volume_df[col] = abs(volume_df[col])
         volume_df = volume_df[volume_cols + keys].groupby(keys).agg('sum').reset_index()
+
         df = price_df.merge(volume_df, how=merge_how, on=keys)
     else:
         df = price_df
 
-    df['date'] = df['time_5min'].dt.date
-
     assert np.all(df['asset2'] == 0)
-    df = make_algo_pricevolume(df)
-
-    return df
+    return make_algo_pricevolume(df)

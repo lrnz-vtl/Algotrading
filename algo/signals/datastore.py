@@ -8,9 +8,11 @@ from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.weights import BaseWeightMaker
 from algo.signals.responses import LookaheadResponse, ComputedLookaheadResponse
 from algo.universe.universe import SimpleUniverse
+from dataclasses import dataclass
 from typing import Optional, Union
 from algo.signals.evaluation import FittableDataStore
 from abc import ABC, abstractmethod
+from algo.signals.featurizers import Featurizer, concat_featurizers
 from ts_tools_algo.series import rolling_min
 
 
@@ -65,7 +67,7 @@ class AnalysisDataStore:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(level=logging.INFO)
 
-        asset_ids = [pool.asset1_id for pool in universe.pools]
+        self.asset_ids = [pool.asset1_id for pool in universe.pools]
         assert all(pool.asset2_id == 0 for pool in universe.pools), "Need to provide a Universe with only Algo pools"
 
         filter_ = make_filter_from_universe(universe)
@@ -82,71 +84,90 @@ class AnalysisDataStore:
         df = process_dfs(dfp, dfv, ffill_price_minutes)
         df_lagged = process_dfs(dfp_lagged, dfv_lagged, ffill_price_minutes)
 
-        df = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
-        df_lagged = df_lagged[df_lagged.index.get_level_values(ASSET_INDEX_NAME).isin(asset_ids)]
-
-        idx = df.index.intersection(df_lagged.index)
-        df = df.loc[idx]
-        df_lagged = df_lagged.loc[idx]
-
-        assert np.all(df.index == df_lagged.index)
+        df = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(self.asset_ids)]
+        df_lagged = df_lagged[df_lagged.index.get_level_values(ASSET_INDEX_NAME).isin(self.asset_ids)]
 
         df_ids = df.index.get_level_values(ASSET_INDEX_NAME).unique()
-        missing_ids = [asset_id for asset_id in asset_ids if asset_id not in df_ids]
+        missing_ids = [asset_id for asset_id in self.asset_ids if asset_id not in df_ids]
         if missing_ids:
             self.logger.error(f"asset ids {missing_ids} are missing from the dataframe generated from the cache")
 
-        self.df = df
-        self.df_lagged = df_lagged
-        self.weights = weight_maker(df)
+        self.df: pd.DataFrame = df
+        self.df_lagged: pd.DataFrame = df_lagged
+        self.weights: pd.Series = weight_maker(df)
 
         assert self.df.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
 
-    def make_response(self, response_maker: LookaheadResponse) -> ComputedLookaheadResponse:
-        return response_maker(self.df['algo_price'])
+    def _make_filters(self, df: Union[pd.DataFrame, pd.Series, ComputedLookaheadResponse], filters: list[DataFilter],
+                       filter_nans: bool = False) -> pd.Series:
 
-    def make_asset_features(self, featurizer):
-        return self.df_lagged.groupby([ASSET_INDEX_NAME]).apply(lambda x: featurizer(x.droplevel(0)))
+        filt_idx = pd.Series(True, index=df.index)
+        orig_weight = self.weights[self.weights.index.isin(df.index)].sum()
+
+        for filt in filters:
+            filt_idx = filt_idx & filt(df)
+        self.logger.info('Percentage of data retained after filters: '
+                         f'{self.weights[self.weights.index.isin(filt_idx[filt_idx].index)].sum() / orig_weight}')
+        if filter_nans:
+            if len(df.shape) == 2:
+                filt_idx = filt_idx & (~df.isna().any(axis=1))
+            else:
+                filt_idx = filt_idx & (~df.isna())
+            self.logger.info(f'Percentage of data retained after filtering nans: '
+                             f'{self.weights[self.weights.index.isin(filt_idx[filt_idx].index)].sum() / orig_weight}')
+
+        return filt_idx
+
+    def _apply_filters(self, df: Union[pd.DataFrame, pd.Series, ComputedLookaheadResponse], filters: list[DataFilter],
+                       filter_nans: bool = False) -> Union[pd.DataFrame, pd.Series, ComputedLookaheadResponse]:
+
+        filt_idx = self._make_filters(df, filters, filter_nans)
+        if isinstance(df, ComputedLookaheadResponse):
+            return ComputedLookaheadResponse(df[filt_idx], df.lookahead_time)
+        else:
+            return df[filt_idx]
+
+    def make_response(self, response_maker: LookaheadResponse, response_asset_ids: list[int],
+                      filter_nans: bool = False) -> ComputedLookaheadResponse:
+
+        assert all(aid in self.asset_ids for aid in response_asset_ids)
+
+        ts = response_maker(self.df.loc[self.df.index.get_level_values(ASSET_INDEX_NAME).isin(response_asset_ids),
+                                        'algo_price'])
+
+        self.logger.info(f"Percentage of response data after filtering ids: {ts.shape[0] / self.df.shape[0]}")
+
+        return self._apply_filters(ts, [], filter_nans)
+
+    def make_asset_features(self, featurizers: list[Featurizer],
+                            responses: ComputedLookaheadResponse,
+                            feature_filters: list[DataFilter],
+                            filter_nans: bool = False) -> pd.DataFrame:
+
+        foo = concat_featurizers(featurizers, list(responses.index.get_level_values(ASSET_INDEX_NAME).unique()))
+        df = foo(self.df_lagged)
+        return self._apply_filters(df, feature_filters, filter_nans)
+
+    def make_trading_filters(self, trading_filters: list[DataFilter]) -> pd.Series:
+        return self._make_filters(self.df, trading_filters)
 
     def make_fittable_data(self,
                            features: pd.DataFrame, response: ComputedLookaheadResponse,
-                           trading_filters: list[DataFilter],
-                           feature_filters: list[DataFilter],
-                           filter_nan_responses: bool = False,
-                           filter_nan_features: bool = False
-                           ) -> FittableDataStore:
+                           trading_filt_idx: pd.Series,
+                           oos_start_time: datetime.datetime) -> FittableDataStore:
 
-        assert np.all(response.ts.index == self.df.index)
-        assert np.all(features.index == self.df.index)
-
-        filt_idx = pd.Series(True, index=self.df.index)
-        for filt in trading_filters:
-            filt_idx = filt_idx & filt(self.df)
-        for filt in feature_filters:
-            filt_idx = filt_idx & filt(features)
-
-        self.logger.info('Percentage of data retained after trading and features filters: '
-                         f'{self.weights[filt_idx].sum() / self.weights.sum()}')
-
-        if filter_nan_responses:
-            self.logger.warning(
-                'Filtering nan responses, this could potentially introduce bias or throw away too much data')
-            filt_idx = filt_idx & (~response.ts.isna())
-
-            self.logger.info(f'Percentage of data retained after filtering nan responses: '
-                             f'{self.weights[filt_idx].sum() / self.weights.sum()}')
-
-        if filter_nan_features:
-            filt_idx = filt_idx & (~features.isna().any(axis=1))
-            self.logger.info(f'Percentage of data retained after filtering nan features: '
-                             f'{self.weights[filt_idx].sum() / self.weights.sum()}')
+        common_idx = features.index.intersection(response.index).intersection(trading_filt_idx[trading_filt_idx].index)
+        filt_idx = self.df.index.isin(common_idx)
 
         prefilter_ids = set(self.weights.index.get_level_values(ASSET_INDEX_NAME).unique())
         postfilter_ids = set(self.weights[filt_idx].index.get_level_values(ASSET_INDEX_NAME).unique())
-        if prefilter_ids != postfilter_ids:
-            self.logger.warning(f'After filtering some ids were dropped! {prefilter_ids}, {postfilter_ids}')
 
-        return FittableDataStore(features[filt_idx],
-                                 ComputedLookaheadResponse(response.ts[filt_idx], response.lookahead_time),
-                                 self.weights[filt_idx]
+        if prefilter_ids != postfilter_ids:
+            self.logger.warning(f'After filtering some ids were dropped! {prefilter_ids.difference(postfilter_ids)}')
+
+        return FittableDataStore(features[features.index.isin(common_idx)],
+                                 ComputedLookaheadResponse(response[response.index.isin(common_idx)],
+                                                           response.lookahead_time),
+                                 self.weights[filt_idx],
+                                 oos_start_time=oos_start_time
                                  )

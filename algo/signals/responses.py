@@ -1,22 +1,19 @@
-import copy
-
 import pandas as pd
 import datetime
 import numpy as np
 from scipy.stats.mstats import winsorize
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 import warnings
-
 warnings.simplefilter(action='ignore', category=FutureWarning)
-from pydantic import BaseModel
 
 
-@dataclass
-class ComputedLookaheadResponse:
-    ts: pd.Series
+class ComputedLookaheadResponse(pd.Series):
     lookahead_time: datetime.timedelta
+
+    def __init__(self, ts: pd.Series, lookahead_time: datetime.timedelta):
+        super().__init__(ts)
+        self.lookahead_time: datetime.timedelta = lookahead_time
 
 
 class LookaheadResponse(ABC):
@@ -32,7 +29,8 @@ class LookaheadResponse(ABC):
 
     def __call__(self, price: pd.Series) -> ComputedLookaheadResponse:
         assert price.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
-        return ComputedLookaheadResponse(self._call(price), self.lookahead_time)
+        ret = self._call(price)
+        return ComputedLookaheadResponse(ret, self.lookahead_time)
 
 
 class SimpleResponse(LookaheadResponse):
@@ -77,41 +75,3 @@ def drop_extremes(y: pd.Series, limits=0.05):
     lower = y.quantile(limits)
     upper = y.quantile(1.0 - limits)
     return y[(y > lower) & (y < upper)]
-
-
-class TransformResponse:
-    def __init__(self, pipeline, resp_transform, weight_argname='sample_weight'):
-        self.pipeline = pipeline
-        self.resp_transorm = resp_transform
-        self.weight_argname = weight_argname
-
-    def fit(self, X, y, **kwargs):
-        y = self.resp_transorm(y)
-        X = X[X.index.isin(y.index)]
-        try:
-            w = kwargs[self.weight_argname]
-        except KeyError as e:
-            print(kwargs.keys())
-            raise e
-        w = w[w.index.isin(y.index)]
-        kwargs[self.weight_argname] = w
-        self.pipeline.fit(X, y, **kwargs)
-        return self
-
-    def fit_transform(self, X, y, **kwargs):
-        self.fit(X, y, **kwargs)
-        return self.transform(X)
-
-    def fit_predict(self, X, y, **kwargs):
-        self.fit(X, y, **kwargs)
-        return self.predict(X)
-
-    def __getattr__(self, attr):
-        if attr == 'fit':
-            return self.fit
-        elif attr == 'fit_predict':
-            return self.fit_predict
-        elif attr == 'fit_transform':
-            return self.fit_transform
-        else:
-            return getattr(self.pipeline, attr)

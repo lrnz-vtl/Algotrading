@@ -1,6 +1,10 @@
 from __future__ import annotations
+
+import datetime
 import json
 import os.path
+import unittest
+
 import algosdk.error
 from tinyman.v1.client import TinymanClient
 from functools import lru_cache
@@ -12,6 +16,7 @@ import dataclasses
 from typing import Optional, Union
 from definitions import ROOT_DIR
 import numpy as np
+from tinyman.v1.pools import Pool
 import time
 from algo.tools.wallets import get_account_data
 
@@ -75,6 +80,20 @@ class PoolIdStore:
         cache_file = os.path.join(POOL_CACHE_BASEDIR, cache_name)
         return load_pool_info(cache_file)
 
+    @staticmethod
+    def from_id_list(ids: list[int], client: TinymanClient) -> PoolIdStore:
+
+        pool_store = PoolIdStore(None)
+        pool_store.pools = list()
+
+        for asset_id in ids:
+            pool: Pool = client.fetch_pool(asset_id, 0)
+            pool_store.pools.append(PoolId(asset1_id=asset_id, asset2_id=0, address=pool.address))
+
+        pool_store.source = 'from_id_list'
+        pool_store.time = datetime.datetime.now()
+        return pool_store
+
     def find_all_pools(self):
         source = self.source
         pools = list()
@@ -116,10 +135,31 @@ class PoolIdStore:
             warnings.warn(f"Skipping pool ({p0, p1}) because received AlgodHTTPError {e}")
             return False
 
+    def serialize(self, cache_name: str):
+        cache_fname = os.path.join(POOL_CACHE_BASEDIR, f'{cache_name}.json')
+        assert not os.path.exists(cache_fname)
+
+        with open(cache_fname, 'w') as f:
+            x = self.asdicts()
+            x['time'] = str(x['time'])
+            json.dump(x, f, indent=4)
+
     def asdicts(self):
         return {'source': self.source,
                 'time': self.time,
                 'pools': [dataclasses.asdict(x) for x in self.pools]}
+
+
+class TestPool(unittest.TestCase):
+    def test_pool(self):
+        ids = [470842789, 226701642, 523683256, 444035862, 478549868, 511484048, 388592191, 559219992, 567485181, 27165954, 378382099, 558801604, 287867876, 287867876, 226265212, 137594422, 465865291]
+        # assert len(set(ids)) == len(ids)
+        from tinyman.v1.client import TinymanMainnetClient
+        client = TinymanMainnetClient()
+
+        poolstore = PoolIdStore.from_id_list(set(ids), client)
+        poolstore.serialize('20220225')
+
 
 
 @dataclass

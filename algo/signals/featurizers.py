@@ -1,10 +1,27 @@
 import pandas as pd
-from ts_tools_algo.features import generate_over_series, ema_provider
-from typing import Callable
+from ts_tools_algo.features import generate_over_series, ema_provider, ema_emv_vec
+from typing import Callable, Union
 from abc import ABC, abstractmethod
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from ts_tools_algo.series import frac_diff
 import numpy as np
+import datetime
+
+
+class XAssetFeaturizer(ABC):
+    @abstractmethod
+    def _call(self, df: pd.DataFrame, response_asset_id: int) -> pd.Series:
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        pass
+
+    def __call__(self, df: pd.DataFrame, response_ids: list[int]) -> pd.Series:
+        assert df.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
+        return pd.concat([self._call(df, response_asset_id) for response_asset_id in response_ids], keys=response_ids,
+                         names=['asset1']).rename(self.name)
 
 
 class SingleASAFeaturizer(ABC):
@@ -15,27 +32,69 @@ class SingleASAFeaturizer(ABC):
 
     @property
     @abstractmethod
-    def name(self):
+    def name(self) -> str:
         pass
 
-    def __call__(self, df: pd.DataFrame) -> pd.Series:
-        assert df.index.names == [TIME_INDEX_NAME]
-        return self._call(df).rename(self.name)
+    def __call__(self, df: pd.DataFrame, response_ids: list[int]) -> pd.Series:
+        assert df.index.names == [ASSET_INDEX_NAME, TIME_INDEX_NAME]
+        ret = df[df.index.get_level_values(ASSET_INDEX_NAME).isin(response_ids)]. \
+            groupby([ASSET_INDEX_NAME]).apply(lambda x: self._call(x.droplevel(ASSET_INDEX_NAME)).rename(self.name))
+        assert all(response_id in ret.index.get_level_values(ASSET_INDEX_NAME).unique() for response_id in response_ids)
+        return ret
 
 
-class MAPriceFeaturizer(SingleASAFeaturizer):
-    def __init__(self, minutes: int, price_col: str = 'algo_price'):
+Featurizer = Union[XAssetFeaturizer, SingleASAFeaturizer]
+
+
+class RunningSum(SingleASAFeaturizer):
+
+    def __init__(self, minutes: int, col: str, den_col:str):
         self.minutes = minutes
-        self.price_col = price_col
+        self.col = col
+        self.den_col = den_col
 
     @property
     def name(self):
-        return f'ma_{self.minutes}'
+        return f'{self.col}_{self.den_col}_{self.minutes}'
 
     def _call(self, df: pd.DataFrame):
-        ts = df[self.price_col]
-        ma = pd.Series(generate_over_series(ts, ema_provider(self.minutes * 60)), index=ts.index)
+        dt = datetime.timedelta(seconds=self.minutes * 60)
+        return df[self.col].rolling(dt).sum() / df[self.den_col]
+
+
+class MAFeaturizer(SingleASAFeaturizer):
+    def __init__(self, minutes: int, col: str):
+        self.minutes = minutes
+        self.col = col
+
+    @property
+    def name(self):
+        return f'{self.col}_ma_{self.minutes}'
+
+    def _call(self, df: pd.DataFrame):
+        ts = df[self.col]
+        ts_seconds = ts.index.values.astype('datetime64[s]').astype('int')
+        xs = ts.values
+        ema, emv = ema_emv_vec(ts_seconds, xs, self.minutes * 60)
+        ma = pd.Series(ema, index=df.index)
         return (ts - ma) / ts
+
+
+class MSTDFeaturizer(SingleASAFeaturizer):
+    def __init__(self, minutes: int, col: str):
+        self.minutes = minutes
+        self.col = col
+
+    @property
+    def name(self):
+        return f'{self.col}_mstd_{self.minutes}'
+
+    def _call(self, df: pd.DataFrame):
+        ts = df[self.col]
+        ts_seconds = ts.index.values.astype('datetime64[s]').astype('int')
+        xs = ts.values
+        ema, emv = ema_emv_vec(ts_seconds, xs, self.minutes * 60)
+        return np.sqrt(emv) / ts
 
 
 class FracDiffFeaturizer(SingleASAFeaturizer):
@@ -77,11 +136,26 @@ class FracDiffEMA(SingleASAFeaturizer):
         return fd_ma / ts
 
 
-def concat_featurizers(fts: list[SingleASAFeaturizer]) -> Callable[[pd.DataFrame], pd.DataFrame]:
+class SingleXAssetFeaturizer(XAssetFeaturizer):
+
+    @property
+    def name(self) -> str:
+        return f'{self.ft.name}_{self.feature_id}'
+
+    def _call(self, df: pd.DataFrame, response_asset_id: int) -> pd.Series:
+        df = df.loc[self.feature_id]
+        return self.ft._call(df)
+
+    def __init__(self, ft: SingleASAFeaturizer, feature_id: int):
+        self.ft = ft
+        self.feature_id = feature_id
+
+
+def concat_featurizers(fts: list[Featurizer], response_ids: list[int]) -> Callable[[pd.DataFrame], pd.DataFrame]:
     names = [ft.name for ft in fts]
     assert len(names) == len(set(names))
 
     def foo(df: pd.DataFrame):
-        return pd.concat([ft(df) for ft in fts], axis=1)
+        return pd.concat([ft(df, response_ids) for ft in fts], axis=1)
 
     return foo
