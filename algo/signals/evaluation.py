@@ -60,6 +60,13 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports
 
     logger.info(f'OOS R^2 = {oos_rsq}')
 
+    corrcoef = corr(y_pred, y_test, w_test)
+    logger.info(f'Response correlation = {corrcoef}')
+
+    data = [[corr(X_test[col], y_test, w_test), corr(X_test[col], m.predict(X_test), w_test)] for col in X_test]
+    corrs = pd.DataFrame(data, index=X_test.columns, columns=['pred', 'true'])
+    print(corrs)
+
     sig = m.predict(X_full)
 
     mean = (sig * w_full).sum() / w_full.sum()
@@ -236,22 +243,26 @@ class FittableDataStore:
         return eval_fitted_model(m, self.features[test_idx], self.response[test_idx], self.weights[test_idx],
                                  self.features[test_idx], self.response[test_idx], self.weights[test_idx])
 
-    def fit_model(self, model, train_idx, fitted_response_transform: Optional[Callable[[pd.Series], pd.Series]],
+    def fit_model(self, model, train_idx, fitted_response_transform: Optional[Callable[[pd.DataFrame, pd.Series, pd.Series], pd.Series]],
                   reports=True, weight_argname='sample_weight'):
 
         X_train = self.features[train_idx]
-        y_train = fitted_response_transform(self.response[train_idx])
         w_train = self.weights[train_idx]
+        y_train = fitted_response_transform(X_train, self.response[train_idx], w_train)
 
         if reports:
             pca = PCA().fit(X_train)
             self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
 
+            data = [corr(X_train[col], y_train, w_train) for col in X_train]
+            corrs = pd.Series(data, index=X_train.columns)
+            print(corrs)
+
         weight_arg = {weight_argname: w_train}
         return model.fit(X_train, y_train, **weight_arg)
 
     def fit_and_eval_model(self, model, train_idx, test_idx,
-                           fitted_response_transform: Optional[Callable[[pd.Series], pd.Series]],
+                           fitted_response_transform: Optional[Callable[[pd.DataFrame, pd.Series, pd.Series], pd.Series]],
                            test_only=False, reports=True, weight_argname='sample_weight'):
 
         m = self.fit_model(model, train_idx, fitted_response_transform=fitted_response_transform,

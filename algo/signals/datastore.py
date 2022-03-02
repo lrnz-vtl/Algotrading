@@ -46,7 +46,7 @@ def lag_market_data(df: pd.DataFrame, lag_seconds: int):
 
 
 def process_dfs(dfp: pd.DataFrame, dfv: Optional[pd.DataFrame], ffill_price_minutes):
-    df = process_market_df(dfp, dfv, ffill_price_minutes)
+    df = process_market_df(dfp, dfv, ffill_price_minutes, make_algo_columns=False)
     df = df.set_index([ASSET_INDEX_NAME, TIME_INDEX_NAME]).sort_index()
     assert np.all(df['asset2'] == 0)
     return df.drop(columns=['asset2', 'level_1'], errors='ignore')
@@ -128,12 +128,12 @@ class AnalysisDataStore:
             return df[filt_idx]
 
     def make_response(self, response_maker: LookaheadResponse, response_asset_ids: list[int],
-                      filter_nans: bool = False) -> ComputedLookaheadResponse:
+                      filter_nans: bool = False, price_col = 'algo_price') -> ComputedLookaheadResponse:
 
         assert all(aid in self.asset_ids for aid in response_asset_ids)
 
         ts = response_maker(self.df.loc[self.df.index.get_level_values(ASSET_INDEX_NAME).isin(response_asset_ids),
-                                        'algo_price'])
+                                        price_col])
 
         self.logger.info(f"Percentage of response data after filtering ids: {ts.shape[0] / self.df.shape[0]}")
 

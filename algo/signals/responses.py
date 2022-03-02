@@ -5,6 +5,8 @@ from scipy.stats.mstats import winsorize
 from abc import ABC, abstractmethod
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 import warnings
+import scipy.linalg as la
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
@@ -62,6 +64,14 @@ class SimpleResponse(LookaheadResponse):
         resp = (prices['price_forward'] - prices['price_start']) / prices['price_start']
 
         return resp
+
+
+def feature_neutralize(X, y, w, strenght=1.0):
+    X = np.hstack([X.values, np.ones(shape=(X.shape[0], 1))])
+    Xw = np.einsum('ij,i->ij', X, np.sqrt(w.values))
+    yw = np.einsum('i,i->i', y, np.sqrt(w.values))
+    betas = la.lstsq(Xw, yw)[0]
+    return y - strenght * np.dot(X, betas)
 
 
 def my_winsorize(y, limits=(0.05, 0.05)):

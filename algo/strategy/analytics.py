@@ -2,25 +2,28 @@ import logging
 import pandas as pd
 import datetime
 import numpy as np
-from algo.universe.assets import get_asset_name, get_decimals
+from algo.universe.assets import get_decimals
 from typing import Optional, Union
 
 
-def make_algo_pricevolume(df):
+def make_algo_pricevolume(df, make_algo_columns=True):
     assert np.all(df['asset2'] == 0)
+
+    volcols = ['asset1_amount', 'asset2_amount']
+    df[volcols] = df[volcols].fillna(0)
+    df['mualgo_price'] = df['asset2_reserves'] / df['asset1_reserves']
 
     def foo(subdf, asset_id):
         decimals = get_decimals(asset_id)
-        subdf['algo_price'] = subdf['asset2_reserves'] / df['asset1_reserves'] * 10 ** (decimals - 6)
+        subdf['algo_price'] = subdf['asset2_reserves'] / subdf['asset1_reserves'] * 10 ** (decimals - 6)
         subdf['algo_reserves'] = subdf['asset2_reserves'] / (10 ** 6)
         if 'asset2_amount' in subdf.columns:
             subdf['algo_volume'] = subdf['asset2_amount'] / (10 ** 6)
-
         return subdf
 
-    df = df.groupby('asset1').apply(lambda x: foo(x, x.name))
-    volcols = ['algo_volume', 'asset1_amount', 'asset2_amount']
-    df[volcols] = df[volcols].fillna(0)
+    if make_algo_columns:
+        df = df.groupby('asset1').apply(lambda x: foo(x, x.name))
+
     return df
 
 
@@ -77,6 +80,7 @@ def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
                       ffill_price_minutes: Optional[Union[int, str]],
                       price_agg_fun='mean',
                       merge_how='left',
+                      make_algo_columns: bool = True
                       ):
     logger = logging.getLogger(__name__)
 
@@ -104,4 +108,4 @@ def process_market_df(price_df: pd.DataFrame, volume_df: Optional[pd.DataFrame],
         df = price_df
 
     assert np.all(df['asset2'] == 0)
-    return make_algo_pricevolume(df)
+    return make_algo_pricevolume(df, make_algo_columns)
