@@ -6,7 +6,7 @@ import datetime
 import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, explained_variance_score
 from algo.signals.constants import ASSET_INDEX_NAME, TIME_INDEX_NAME
 from algo.signals.responses import ComputedLookaheadResponse
 from sklearn.decomposition import PCA
@@ -26,14 +26,16 @@ def not_nan_mask(*vecs):
 
 
 def plot_bins(x, y, w, nbins=20):
+
+    if nbins is None:
+        nbins = 20
+
     sort_idx = x.sort_values().index
     wbins = pd.cut(w[sort_idx].cumsum(), bins=nbins)
 
     xsums = (x * w).groupby(wbins).sum()
     ysums = (y * w).groupby(wbins).sum()
     wsums = w.groupby(wbins).sum()
-
-    # ymedian = y.groupby(wbins).median()
 
     xp = xsums / wsums
     yp = ysums / wsums
@@ -43,14 +45,14 @@ def plot_bins(x, y, w, nbins=20):
     xs = np.linspace(xmin, xmax, 100)
 
     plt.plot(xp, yp, label='mean')
-    # plt.plot(xp, ymedian, label='median')
     plt.plot(xs, xs, ls='--', c='k')
     plt.grid()
 
 
-def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports=True):
+def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports=True, reports_args=dict()):
     y_pred = pd.Series(m.predict(X_test), index=X_test.index)
     oos_rsq = r2_score(y_test, y_pred, sample_weight=w_test)
+    eps = explained_variance_score(y_test, y_pred, sample_weight=w_test)
 
     if not reports:
         return oos_rsq
@@ -58,14 +60,14 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports
     logger = logging.getLogger(__name__)
     ads = get_asset_datastore()
 
-    logger.info(f'OOS R^2 = {oos_rsq}')
+    logger.info(f'OOS R^2 = {oos_rsq}, eps={eps}')
 
     corrcoef = corr(y_pred, y_test, w_test)
     logger.info(f'Response correlation = {corrcoef}')
 
     data = [[corr(X_test[col], y_test, w_test), corr(X_test[col], m.predict(X_test), w_test)] for col in X_test]
     corrs = pd.DataFrame(data, index=X_test.columns, columns=['pred', 'true'])
-    print(corrs)
+    # print(corrs)
 
     sig = m.predict(X_full)
 
@@ -73,7 +75,7 @@ def eval_fitted_model(m, X_test, y_test, w_test, X_full, y_full, w_full, reports
     std = np.sqrt((w_full * (sig - mean) ** 2).sum() / w_full.sum())
     logger.info(f'mean = {mean}, std = {std}')
 
-    plot_bins(y_pred, y_test, w_test)
+    plot_bins(y_pred, y_test, w_test, nbins=reports_args.get('nbins'))
 
     xxw = w_full * sig ** 2
     xyw = w_full * sig * y_full
@@ -113,6 +115,7 @@ def cov(x, y, w):
 
 def corr(x, y, w):
     xmean = (x * w).sum() / w.sum()
+    # print(y,w)
     ymean = (y * w).sum() / w.sum()
     return (w * (x - xmean) * (y - ymean)).sum() / \
            np.sqrt((w * (x - xmean) ** 2).sum() * (w * (y - ymean) ** 2).sum())
@@ -140,23 +143,41 @@ def bootstrap_betas(features: pd.DataFrame, response: pd.Series, weights: pd.Ser
         yield betas
 
 
-def make_train_val_splits(response: ComputedLookaheadResponse, weights: pd.Series, oos_start_time: datetime.datetime, val_frac=0.3):
+def make_train_val_splits(response: ComputedLookaheadResponse,
+                          weights: pd.Series,
+                          oos_time: datetime.datetime,
+                          splitting_strategy: str,
+                          val_frac=0.3,
+                          ):
     logger = logging.getLogger(__name__)
 
     lookahead_time = response.lookahead_time + datetime.timedelta(minutes=5)
 
-    upper_val_ts = oos_start_time - lookahead_time
-
-    is_weights = weights[weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts]
-    is_weights = is_weights.groupby(TIME_INDEX_NAME).agg(sum).sort_index()
+    if splitting_strategy == "normal":
+        upper_val_ts = oos_time - lookahead_time
+        is_weights = weights[weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts]
+        is_weights = is_weights.groupby(TIME_INDEX_NAME).agg(sum).sort_index()
+    elif splitting_strategy == 'inverted':
+        lower_train_ts = oos_time + lookahead_time
+        is_weights = weights[weights.index.get_level_values(TIME_INDEX_NAME) >= lower_train_ts]
+        is_weights = is_weights.groupby(TIME_INDEX_NAME).agg(sum).sort_index()
+    else:
+        raise ValueError
 
     val_idx = (is_weights.cumsum() / is_weights.sum() >= 1-val_frac)
     first_val_ts = val_idx[val_idx].index.get_level_values(TIME_INDEX_NAME).min()
     upper_train_ts = first_val_ts - lookahead_time
 
-    train_idx = weights.index.get_level_values(TIME_INDEX_NAME) <= upper_train_ts
-    val_idx = (weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts) & \
-              (weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts)
+    if splitting_strategy == "normal":
+        train_idx = weights.index.get_level_values(TIME_INDEX_NAME) <= upper_train_ts
+        val_idx = (weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts) & \
+                  (weights.index.get_level_values(TIME_INDEX_NAME) <= upper_val_ts)
+    elif splitting_strategy == "inverted":
+        train_idx = (weights.index.get_level_values(TIME_INDEX_NAME) >= lower_train_ts) & \
+                    (weights.index.get_level_values(TIME_INDEX_NAME) <= upper_train_ts)
+        val_idx = (weights.index.get_level_values(TIME_INDEX_NAME) >= first_val_ts)
+    else:
+        raise ValueError
 
     assert len(weights) > train_idx.sum() + val_idx.sum()
     assert ~np.any(train_idx & val_idx)
@@ -165,9 +186,19 @@ def make_train_val_splits(response: ComputedLookaheadResponse, weights: pd.Serie
 
     train_times = weights[train_idx].index.get_level_values(TIME_INDEX_NAME)
     test_times = weights[val_idx].index.get_level_values(TIME_INDEX_NAME)
-    oos_times = weights[weights.index.get_level_values(TIME_INDEX_NAME) > oos_start_time].index.get_level_values(TIME_INDEX_NAME)
+
+    if splitting_strategy == "normal":
+        oos_times = weights[weights.index.get_level_values(TIME_INDEX_NAME) > oos_time].index.get_level_values(TIME_INDEX_NAME)
+        assert test_times.max() < oos_times.min()
+    elif splitting_strategy == "inverted":
+        oos_times = weights[weights.index.get_level_values(TIME_INDEX_NAME) < oos_time].index.get_level_values(
+            TIME_INDEX_NAME)
+        assert oos_times.max() < test_times.min()
+    else:
+        raise ValueError
+
     assert train_times.max() < test_times.min(), f"{train_times.max()}, {test_times.min()}"
-    assert test_times.max() < oos_times.min()
+
     logger.info(f'Train times = {train_times.min(), train_times.max()}, '
                 f'val times = {test_times.min(), test_times.max()}')
 
@@ -177,7 +208,7 @@ def make_train_val_splits(response: ComputedLookaheadResponse, weights: pd.Serie
 class FittableDataStore:
 
     def __init__(self, features: pd.DataFrame, response: ComputedLookaheadResponse, weights: pd.Series,
-                 oos_start_time: datetime.datetime):
+                 oos_time: datetime.datetime, splitting_strategy: str = 'normal'):
         client = TinymanMainnetClient()
         self.ads = AssetDataStore(client)
 
@@ -189,14 +220,18 @@ class FittableDataStore:
         self.response = response
         self.weights = weights
 
-        self.oos_start_time = oos_start_time
+        self.oos_time = oos_time
 
-        self.oos_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= self.oos_start_time
-        self.is_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) <= self.oos_start_time - response.lookahead_time - datetime.timedelta(minutes=5)
+        if splitting_strategy == 'normal':
+            self.oos_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= self.oos_time
+            self.is_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) <= self.oos_time - response.lookahead_time - datetime.timedelta(minutes=5)
+        elif splitting_strategy == 'inverted':
+            self.oos_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) <= self.oos_time
+            self.is_idx = self.weights.index.get_level_values(TIME_INDEX_NAME) >= self.oos_time + response.lookahead_time + datetime.timedelta(minutes=5)
 
         self.logger = logging.getLogger(__name__)
-
         self.full_idx = pd.Series(True, index=self.weights.index)
+        self.splitting_strategy = splitting_strategy
 
     def bootstrap_arrays(self, n: int, *vecs):
         assets = self.weights.index.get_level_values(0).unique()
@@ -208,7 +243,7 @@ class FittableDataStore:
                 vecs)
 
     def bootstrap_betas(self):
-        return bootstrap_betas(self.features, self.response, self.weights)
+        return bootstrap_betas(self.features, self.response.ts, self.weights)
 
     def eval_features(self):
         cols = self.features.columns
@@ -234,7 +269,11 @@ class FittableDataStore:
 
     def make_train_val_splits(self, val_frac=0.3):
 
-        return make_train_val_splits(self.response, self.weights, val_frac=val_frac, oos_start_time=self.oos_start_time)
+        return make_train_val_splits(self.response,
+                                     self.weights,
+                                     val_frac=val_frac,
+                                     oos_time=self.oos_time,
+                                     splitting_strategy=self.splitting_strategy)
 
     def predict(self, m, test_idx):
         return pd.Series(m.predict(self.features[test_idx]), index=test_idx.index)
@@ -248,30 +287,33 @@ class FittableDataStore:
 
         X_train = self.features[train_idx]
         w_train = self.weights[train_idx]
-        y_train = fitted_response_transform(X_train, self.response[train_idx], w_train)
+        y_train = fitted_response_transform(X_train, self.response.ts[train_idx], w_train)
 
         if reports:
             pca = PCA().fit(X_train)
             self.logger.info(f'Partial variance ratios: {pca.explained_variance_ratio_.cumsum()[:-1]}')
 
             data = [corr(X_train[col], y_train, w_train) for col in X_train]
-            corrs = pd.Series(data, index=X_train.columns)
-            print(corrs)
+            # corrs = pd.Series(data, index=X_train.columns)
+            # print(corrs)
 
         weight_arg = {weight_argname: w_train}
         return model.fit(X_train, y_train, **weight_arg)
 
     def fit_and_eval_model(self, model, train_idx, test_idx,
                            fitted_response_transform: Optional[Callable[[pd.DataFrame, pd.Series, pd.Series], pd.Series]],
-                           test_only=False, reports=True, weight_argname='sample_weight'):
+                           eval_response_transform: Optional[Callable[[pd.Series, pd.Series], pd.Series]],
+                           test_only=False, reports=True, weight_argname='sample_weight', reports_args = dict()):
 
         m = self.fit_model(model, train_idx, fitted_response_transform=fitted_response_transform,
                            reports=reports, weight_argname=weight_argname)
 
         if test_only:
-            Xfull, yfull, wfull = self.features[test_idx], self.response[test_idx], self.weights[test_idx]
+            Xfull, yfull, wfull = self.features[test_idx], self.response.ts[test_idx], self.weights[test_idx]
         else:
             Xfull, yfull, wfull = self.features, self.response, self.weights
 
-        return eval_fitted_model(m, self.features[test_idx], self.response[test_idx], self.weights[test_idx],
-                                 Xfull, yfull, wfull, reports=reports)
+        return eval_fitted_model(m, self.features[test_idx],
+                                 eval_response_transform(self.response.ts[test_idx], self.weights[test_idx]),
+                                 self.weights[test_idx],
+                                 Xfull, yfull, wfull, reports=reports, reports_args=reports_args)

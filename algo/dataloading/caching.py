@@ -23,7 +23,7 @@ def load_algo_pools(cache_name: str, data_type: str, filter_pair: Optional[Calla
                 a0, a1 = tuple(int(x) for x in name.split('_'))
 
                 if filter_pair is None or filter_pair(a0, a1):
-                    dv = DateValidator(f'{ROOT_DIR}/caches/{data_type}', cache_name, (a0, a1))
+                    dv = DateValidator(f'{ROOT_DIR}/caches/{data_type}', cache_name, None, (a0, a1))
                     assert not dv.has_gaps()
                     df = pd.read_parquet(base_dir)
                     if not df.empty:

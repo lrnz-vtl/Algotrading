@@ -152,7 +152,23 @@ class PoolIdStore:
 
 class TestPool(unittest.TestCase):
     def test_pool(self):
-        ids = [470842789, 226701642, 523683256, 444035862, 478549868, 511484048, 388592191, 559219992, 567485181, 27165954, 378382099, 558801604, 287867876, 287867876, 226265212, 137594422, 465865291]
+        ids = [470842789,
+               226701642,
+               523683256,
+               444035862,
+               478549868,
+               511484048,
+               388592191,
+               559219992,
+               567485181,
+               27165954,
+               378382099,
+               558801604,
+               287867876,
+               226265212,
+               137594422,
+               465865291
+               ]
         # assert len(set(ids)) == len(ids)
         from tinyman.v1.client import TinymanMainnetClient
         client = TinymanMainnetClient()
@@ -160,6 +176,34 @@ class TestPool(unittest.TestCase):
         poolstore = PoolIdStore.from_id_list(set(ids), client)
         poolstore.serialize('20220225')
 
+    def test_pool_usd(self):
+        ids = [470842789,
+               226701642,
+               523683256,
+               444035862,
+               478549868,
+               511484048,
+               388592191,
+               559219992,
+               567485181,
+               27165954,
+               378382099,
+               558801604,
+               287867876,
+               226265212,
+               137594422,
+               465865291,
+               31566704, # USDC
+               386195940, # goETH
+               312769, # USDT
+               386192725, # goBTC
+               ]
+        # assert len(set(ids)) == len(ids)
+        from tinyman.v1.client import TinymanMainnetClient
+        client = TinymanMainnetClient()
+
+        poolstore = PoolIdStore.from_id_list(set(ids), client)
+        poolstore.serialize('20220225_usd')
 
 
 @dataclass

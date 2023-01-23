@@ -58,13 +58,19 @@ class DateScheduler:
 
 
 class DateValidator:
-    def __init__(self, cache_basedir: str, cache_name: str, assets):
+    def __init__(self, cache_basedir: str, cache_name: str, dest_cache: str, assets):
         self.assets = assets
-        basedir = os.path.join(cache_basedir, cache_name)
+
         assets = list(sorted(assets, reverse=True))
-        cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
-        os.makedirs(cache_dir, exist_ok=True)
-        self.cache_dir = cache_dir
+
+        basedir = os.path.join(cache_basedir, cache_name)
+        self.cache_dir = os.path.join(basedir, "_".join([str(x) for x in assets]))
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+        if dest_cache is not None:
+            destbasedir = os.path.join(cache_basedir, dest_cache)
+            self.destcache_dir = os.path.join(destbasedir, "_".join([str(x) for x in assets]))
+            os.makedirs(self.destcache_dir, exist_ok=True)
 
     def get_existing_dates(self):
         try:
@@ -78,7 +84,7 @@ class DateValidator:
             assert_date(date)
             date = date.date()
         existing_dates = self.get_existing_dates()
-        with open(f'{self.cache_dir}.json', 'w') as json_file:
+        with open(f'{self.destcache_dir}.json', 'w') as json_file:
             existing_dates.add(date)
             json.dump(existing_dates, json_file, default=str)
 
@@ -118,7 +124,10 @@ class DataCacher(ABC):
                  cache_basedir: str,
                  client: TinymanClient,
                  date_min: datetime.datetime,
-                 date_max: Optional[datetime.datetime]):
+                 date_max: Optional[datetime.datetime],
+                 dry_run: bool):
+
+        self.dry_run = dry_run
 
         self.client = client
         self.pools = [(x.asset1_id, x.asset2_id) for x in pool_id_store.pools]
@@ -132,25 +141,28 @@ class DataCacher(ABC):
     def make_scraper(self, asset1_id: int, asset2_id: int):
         pass
 
-    def cache(self, cache_name: str):
+    def cache(self, cache_name: str, dest_cache: str):
         basedir = os.path.join(self.cache_basedir, cache_name)
+        dest_basedir = os.path.join(self.cache_basedir, dest_cache)
+
         os.makedirs(basedir, exist_ok=True)
+        os.makedirs(dest_basedir, exist_ok=True)
 
         async def main():
             async with aiohttp.ClientSession() as session:
-                await asyncio.gather(*[self._cache_pool(session, assets, cache_name) for assets in self.pools])
+                await asyncio.gather(*[self._cache_pool(session, assets, cache_name, dest_cache) for assets in self.pools])
 
         uvloop.install()
 
         asyncio.run(main())
 
-    async def _cache_pool(self, session, assets, cache_name):
+    async def _cache_pool(self, session, assets, cache_name, dest_cache):
         assets = list(sorted(assets, reverse=True))
 
-        dv = DateValidator(self.cache_basedir, cache_name, assets)
+        dv = DateValidator(self.cache_basedir, cache_name, dest_cache, assets)
 
         def file_name(date):
-            return os.path.join(dv.cache_dir, f'{date}.parquet')
+            return os.path.join(dv.destcache_dir, f'{date}.parquet')
 
         existing_dates = dv.get_existing_dates()
 
@@ -175,12 +187,13 @@ class DataCacher(ABC):
         def cache_day_df(daydf: pd.DataFrame, date):
             fname = file_name(date)
             table = pa.Table.from_pandas(daydf)
-            pq.write_table(table, fname)
+            if not self.dry_run:
+                pq.write_table(table, fname)
 
         async for data in groupby_days(scraper.scrape(session=session,
                                                       num_queries=None,
-                                                      timestamp_min=datetime_to_int(date_min),
-                                                      query_params=QueryParams(before_time=date_max))
+                                                      timestamp_min=None,
+                                                      query_params=QueryParams(after_time=date_min, before_time=date_max))
                                        ):
             df = generator_to_df(data)
             dates = df['time'].dt.date.unique()
@@ -191,10 +204,11 @@ class DataCacher(ABC):
             dv.add_fetched_date(date)
             self.logger.info(f'Cached date {date} for assets {assets}')
 
-        # Assume previous opearation was successful, fill the missing dates even if there is not data
+        # Assume previous operation was successful, fill the missing dates even if there is no data
         existing_dates = dv.get_existing_dates()
         for date in dates_to_fetch:
             if date not in existing_dates:
-                dv.add_fetched_date(date)
+                if not self.dry_run:
+                    dv.add_fetched_date(date)
 
 

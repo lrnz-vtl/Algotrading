@@ -30,6 +30,7 @@ class PoolState:
     time: int
     asset1_reserves: int
     asset2_reserves: int
+    issued_liquidity: int
     block: int
     reverse_order_in_block: int
 
@@ -56,6 +57,8 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_o
 
     s1 = get_state_int(state, 's1')
     s2 = get_state_int(state, 's2')
+    issued_liquidity = get_state_int(state, 'ilt')
+
     if s1 is None or s2 is None:
         return None
 
@@ -64,7 +67,13 @@ def get_pool_state_txn(tx: dict, prev_time: Optional[int] = None, prev_reverse_o
     else:
         reverse_order_in_block = 0
 
-    return PoolState(tx['round-time'], s1, s2, tx['confirmed-round'], reverse_order_in_block)
+    return PoolState(time=tx['round-time'],
+                     asset1_reserves=s1,
+                     asset2_reserves=s2,
+                     issued_liquidity=issued_liquidity,
+                     block=tx['confirmed-round'],
+                     reverse_order_in_block=reverse_order_in_block
+                     )
 
 
 class PriceScraper(DataScraper):
@@ -125,13 +134,15 @@ class PriceCacher(DataCacher):
     def __init__(self, client: TinymanClient,
                  pool_id_store: PoolIdStore,
                  date_min: datetime.datetime,
-                 date_max: Optional[datetime.datetime]):
+                 date_max: Optional[datetime.datetime],
+                 dry_run: bool):
 
         super().__init__(pool_id_store,
                          PRICE_CACHES_BASEDIR,
                          client,
                          date_min,
-                         date_max)
+                         date_max,
+                         dry_run)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
         try:

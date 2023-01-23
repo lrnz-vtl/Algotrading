@@ -85,13 +85,13 @@ class TotalDataLoader:
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(*[self._load_pool(session, assets) for assets in self.assets])
 
-    def load(self) -> pd.DataFrame:
+    async def load(self) -> pd.DataFrame:
         async def main():
             async with aiohttp.ClientSession() as session:
                 await asyncio.gather(*[self._load_pool(session, assets) for assets in self.assets])
 
         # uvloop.install()
-        asyncio.run(main())
+        await main()
 
         self.new_data.sort(key=lambda x: x.price_update.time)
 

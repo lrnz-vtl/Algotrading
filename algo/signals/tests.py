@@ -1,14 +1,16 @@
 import unittest
+from algo.dataloading.caching import make_filter_from_universe, join_caches_with_priority
 from algo.signals.datastore import AnalysisDataStore, RollingLiquidityFilter
 from algo.signals.evaluation import *
-from algo.signals.featurizers import MAPriceFeaturizer, concat_featurizers
-from algo.signals.responses import SimpleResponse, TransformResponse, my_winsorize
+from algo.signals.featurizers import concat_featurizers
+from algo.signals.responses import SimpleResponse, my_winsorize
 from algo.signals.weights import SimpleWeightMaker
 from algo.signals.models import RemoveIntercept
 from sklearn.linear_model import LinearRegression
 from algo.universe.universe import SimpleUniverse
 from pydantic import BaseModel
 from sklearn.pipeline import Pipeline
+from algo.signals.entropy import entropies
 
 smalluniverse_cache_name1 = 'liquid_algo_pools_nousd_prehack_noeth'
 
@@ -62,7 +64,7 @@ class TestAnalysisDs(unittest.TestCase):
             (
                 ('linreg', RemoveIntercept(TransformResponse(LinearRegression(),
                                                              resp_transform=lambda y: my_winsorize(y, (
-                                                             self.winsor_limit, self.winsor_limit))))),
+                                                                 self.winsor_limit, self.winsor_limit))))),
             )
         )
 
@@ -99,7 +101,7 @@ class TestOOS(unittest.TestCase):
             (
                 ('linreg', RemoveIntercept(TransformResponse(LinearRegression(),
                                                              resp_transform=lambda y: my_winsorize(y, (
-                                                             self.winsor_limit, self.winsor_limit))))),
+                                                                 self.winsor_limit, self.winsor_limit))))),
             )
         )
 
@@ -161,3 +163,24 @@ class TestFitTrading(unittest.TestCase):
         self.logger.info(model.coef_, model.intercept_)
 
         fitds.test_model(model, fitds.full_idx)
+
+
+class TestOne(unittest.TestCase):
+    def test_one(self):
+        smalluniverse_cache_name = 'update_20220225'
+        volume_caches = ['20220225']
+
+        universe = SimpleUniverse.from_cache(smalluniverse_cache_name)
+
+        filter_ = make_filter_from_universe(universe)
+        dfv = join_caches_with_priority(volume_caches, 'volumes', filter_)
+
+        test = dfv[dfv['asset1'] == 470842789]
+        test['time_5min'] = (test['time'] // (5 * 60))
+
+        times = test['time_5min'].values
+        amounts = abs(test['asset2_amount'].values)
+        addrs = test['counterparty'].values
+
+        times, values = entropies(times, amounts, addrs)
+        print(times[:10], values[:10])

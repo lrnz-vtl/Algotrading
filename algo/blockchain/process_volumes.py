@@ -115,7 +115,7 @@ class SwapScraper(DataScraper):
 
         async for tx in query_transactions_for_pool(session, self.address, num_queries, query_params=query_params):
 
-            if tx.time < timestamp_min:
+            if timestamp_min is not None and tx.time < timestamp_min:
                 break
 
             if transaction_out:
@@ -157,8 +157,9 @@ class VolumeCacher(DataCacher):
 
     def __init__(self, client: TinymanClient, pool_id_store: PoolIdStore,
                  date_min: datetime.datetime,
-                 date_max: Optional[datetime.datetime]):
-        super().__init__(pool_id_store, VOLUME_CACHES_BASEDIR, client, date_min, date_max)
+                 date_max: Optional[datetime.datetime],
+                 dry_run:bool):
+        super().__init__(pool_id_store, VOLUME_CACHES_BASEDIR, client, date_min, date_max, dry_run)
 
     def make_scraper(self, asset1_id: int, asset2_id: int):
         try:
