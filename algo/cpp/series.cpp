@@ -4,7 +4,7 @@
 namespace py = pybind11;
 
 
-py::array_t<double> cseries::shift(py::array_t<unsigned long int> ts, py::array_t<double> xs, long int delta_us) {
+py::array_t<double> shift_forward(py::array_t<unsigned long int> ts, py::array_t<double> xs, long int delta_us) {
     py::buffer_info ts_buf = ts.request();
     unsigned long int *ts_ptr = static_cast<unsigned long int *>(ts_buf.ptr);
 
@@ -25,8 +25,8 @@ py::array_t<double> cseries::shift(py::array_t<unsigned long int> ts, py::array_
     return future_xs;
 }
 
+PYBIND11_MODULE(cseries, m) {
+    m.doc() = "timeseries plugin";
 
-int main() {
-    std::cout << "Hello" << std::endl;
-    return 0;
+    m.def("shift_forward", &shift_forward, "shift time series forward");
 }

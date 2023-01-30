@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 14)            # Enable c++14 standard
 find_package(PythonLibs REQUIRED)
 include_directories(${PYTHON_INCLUDE_DIRS})
 
-# Add main.cpp file of project root directory as source file
-set(SOURCE_FILES series.cpp)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -15,13 +13,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# find_package(GTest REQUIRED)
-# include_directories(${GTEST_INCLUDE_DIR})
+find_package(GTest REQUIRED)
 
 
 # Add executable target with source files listed in SOURCE_FILES variable
-add_executable(cseries ${SOURCE_FILES})
-target_link_libraries(cseries ${PYTHON_LIBRARIES})
+add_executable(series series.cpp series_main.cpp)
+target_link_libraries(series ${PYTHON_LIBRARIES})
 
 
 enable_testing()
@@ -29,14 +26,17 @@ enable_testing()
 add_executable(
   series_tests
   series_tests.cpp
-#   series.cpp
-#   series.h
+  series.cpp
 )
+
 target_link_libraries(
     series_tests
-    GTest::gtest_main
+    # ${GTEST_LIBRARIES}
+    gtest_main
     ${PYTHON_LIBRARIES}
 )
 
 include(GoogleTest)
 gtest_discover_tests(series_tests)
+
+# add_test(series_tests series_tests)
