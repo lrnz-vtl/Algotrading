@@ -1,9 +1,8 @@
-import datetime
 from pathlib import Path
-
-import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from algo.cpp import shift
+
 
 data_base = Path('/home/lorenzo/microprice')
 fname = 'binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv'
@@ -16,41 +15,24 @@ fname_parquet = 'binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.parquet'
 # df.to_parquet(data_base / fname_parquet)
 df = pd.read_parquet(data_base / fname_parquet)
 
-print(df.dtypes)
-
 
 def process_df(df):
     # df.columns = ['trade Id', 'price', 'qty', 'quoteQty', 'time', 'isBuyerMaker', 'isBestMatch']
     df['time'] = pd.to_datetime(df['timestamp'], unit='us')
-    df = df.set_index('time')
+    df = df.set_index('timestamp')
     # idx = ((df.index > start) & (df.index < end))
     # df = df[idx]
     return df
 
-
 df = process_df(df)
 
+df['mid'] = (df['asks[0].price'] + df['bids[0].price']) / 2.0
 
-def process_series(ts: np.array):
-    i = 0
-    j = 0
-    print(ts)
-    delta = datetime.timedelta(seconds=1)
-    ret = ts.copy()
-    for i in range(len(ts)):
-        while j < len(ts) and ts[j] - ts[i] < delta:
-            j += 1
-        ret[i] = ts[j]
-    return ret
+df['future_mid'] = shift.shift(df.index.values, df['mid'].values, 1000000 * 6000)
+# print(df['future_mid'])
 
-
-mid = (df['asks[0].price'] + df['bids[0].price']) / 2.0
-
-idx2 = process_series(mid.index.values)
-
-print(df.head())
-
-# df = process_df(df)
-# df2 = process_df(df2)
-
-# df['price'].plot()
+plt.plot(df['time'], df['mid'], label='mid')
+plt.plot(df['time'], df['future_mid'], label='future_mid')
+plt.legend()
+plt.grid()
+plt.show()
