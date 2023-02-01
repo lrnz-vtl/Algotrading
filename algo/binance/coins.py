@@ -136,9 +136,13 @@ def load_candles(pair_name: str, freq: str):
 
 
 class Universe:
-    def __init__(self, n_top_coins: int,
-                 mcap_date: datetime.date):
-        self.coins = top_mcap(mcap_date)[:n_top_coins]
+    def __init__(self, coins):
+        self.coins = coins
+
+    @classmethod
+    def make(cls, n_top_coins: int,
+             mcap_date: datetime.date) -> 'Universe':
+        return cls(top_mcap(mcap_date)[:n_top_coins])
 
 
 def load_universe_candles(universe: Universe,
