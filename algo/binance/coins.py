@@ -12,7 +12,6 @@ import requests
 import datetime
 from joblib import Memory
 
-logger = logging.getLogger(__name__)
 
 cachedir = '/home/lorenzo/caches'
 memory = Memory(cachedir, verbose=0)
@@ -27,12 +26,47 @@ exclude_symbols = {'busd',
                    'paxg'  # Gold
                    }
 
+# Some ids correspond to multiple symbols
+hardcoded_ids = {'gmx': 'gmx',
+                 'bond': 'barnbridge',
+                 'firo': 'zcoin',
+                 'ont': 'ontology',
+                 'sol': 'solana',
+                 'dot': 'polkadot',
+                 'lrc': 'loopring',
+                 'shib': 'shiba-inu',
+                 'xno': 'nano',
+                 'ltc': 'litecoin',
+                 'ftt': 'ftx-token',
+                 'dydx': 'dydx',
+                 'apt': 'aptos',
+                 'eth': 'ethereum',
+                 'bnb': 'binancecoin',
+                 'ada': 'cardano',
+                 'mana': 'decentraland',
+                 'doge': 'dogecoin',
+                 'xrp': 'ripple',
+                 'uni': 'uniswap'
+}
+
 
 @memory.cache()
-def symbol_to_id() -> dict[str, str]:
+def symbol_to_ids() -> dict[str, list[str]]:
     url = 'https://api.coingecko.com/api/v3/coins/list'
-    coin_list = requests.get(url).json()
-    return {x['symbol']: x['id'] for x in coin_list}
+    x = requests.get(url)
+    coin_list = x.json()
+    ret = {}
+    for x in coin_list:
+        symbol = x['symbol']
+        if 'wormhole' in symbol:
+            continue
+        if 'binance-peg' in symbol:
+            continue
+        if symbol not in ret:
+            ret[symbol] = [x['id']]
+        else:
+            ret[symbol].append(x['id'])
+    return ret
 
 
 def all_symbols():
@@ -45,6 +79,8 @@ def all_symbols():
 
 @memory.cache()
 def get_mcap(coin_id: str, date: datetime.date) -> Optional[float]:
+    logger = logging.getLogger(__name__)
+
     date_str = date.strftime("%d-%m-%Y")
 
     """ Memoize because of the rate limit """
@@ -64,21 +100,40 @@ def get_mcap(coin_id: str, date: datetime.date) -> Optional[float]:
         raise KeyError(oi_data) from e
 
 
-def top_mcap(date: datetime.date) -> list[str]:
-    symbols_map = symbol_to_id()
+class MultipleIdException(Exception):
+    pass
+
+
+def top_mcap(date: datetime.date, dry_run: bool = False) -> list[str]:
+    logger = logging.getLogger(__name__)
+
+    symbols_map = symbol_to_ids()
     ret = []
 
     for symbol in all_symbols():
-        coin_id = symbols_map.get(symbol, None)
-        if coin_id is None:
+        coin_ids = symbols_map.get(symbol, None)
+        if coin_ids is None:
             logger.warning(f'{symbol} not in symbols_map')
             continue
         if symbol in exclude_symbols:
             continue
 
+        if len(coin_ids) > 1:
+            if symbol in hardcoded_ids:
+                coin_id = hardcoded_ids[symbol]
+                assert coin_id in coin_ids
+            else:
+                logger.error(f'{symbol=}, {coin_ids=} not hardcoded')
+                continue
+        else:
+            coin_id = coin_ids[0]
+
         while True:
             try:
-                info = get_mcap(coin_id, date)
+                if dry_run:
+                    info = None
+                else:
+                    info = get_mcap(coin_id, date)
                 if info is not None:
                     ret.append((symbol, info))
                 break
@@ -149,6 +204,8 @@ def load_universe_candles(universe: Universe,
                           start_date: datetime.datetime,
                           end_date: datetime.datetime,
                           freq: str):
+    logger = logging.getLogger(__name__)
+
     dfs = []
 
     for coin in universe.coins:

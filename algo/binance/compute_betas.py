@@ -1,13 +1,9 @@
 import logging
-import unittest
-
 import numpy as np
 import sklearn
 from sklearn import decomposition
 import pandas as pd
 from algo.cpp.cseries import shift_forward, compute_ema
-from matplotlib import pyplot as plt
-import datetime
 
 
 class BetaStore:
@@ -37,7 +33,7 @@ class BetaStore:
     def compute_beta(self, product_ret_ts: pd.Series) -> float:
         idx = self.mkt_returns.index.intersection(product_ret_ts.index)
 
-        if len(idx) < 0.99*len(product_ret_ts.index):
+        if len(idx) < 0.99 * len(product_ret_ts.index):
             self.logger.warning(f'{len(idx)=}')
 
         assert len(idx) > 0
