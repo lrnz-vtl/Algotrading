@@ -69,6 +69,21 @@ class FitData:
 
 
 @dataclass
+class GlobalPredTargets:
+    orig_target_train: pd.Series
+    orig_target_test: pd.Series
+    global_pred_train: pd.Series
+    global_pred_test: pd.Series
+
+
+@dataclass
+class ProductFitData:
+    data: FitData
+    vol_rescaling: Optional[float]
+    global_pred_targets: Optional[GlobalPredTargets]
+
+
+@dataclass
 class UniverseFitData:
     train_targets: dict[str, pd.Series]
     test_targets: dict[str, pd.Series]
@@ -274,10 +289,7 @@ class UniverseDataStore:
         return FitData(train_target=train_target, test_target=test_target,
                        features_train=features_train, features_test=features_test)
 
-    def fit_products(self, ufd: UniverseFitData, model_options: ModelOptions,
-                     global_fit_results: Optional[FitResults]) -> dict[str, FitResults]:
-
-        ress = {}
+    def gen_product_data(self, ufd: UniverseFitData, global_fit_results: Optional[FitResults]):
 
         for pair, ds in self.pds.items():
             train_target = ufd.train_targets[pair]
@@ -304,39 +316,50 @@ class UniverseDataStore:
                                    features_test,
                                    )
 
-                res = fit_eval_model(fit_data,
-                                     model_options)
+                yield pair, ProductFitData(data=fit_data,
+                                           vol_rescaling=ufd.vol_rescalings[pair] if ufd.vol_rescalings else None,
+                                           global_pred_targets=GlobalPredTargets(
+                                               global_pred_train=train_global_pred,
+                                               global_pred_test=test_global_pred,
+                                               orig_target_train=train_target,
+                                               orig_target_test=test_target)
+                                           )
 
-                res.train.ypred = res.train.ypred + train_global_pred
-                res.train.ytrue = train_target.rename('ytrue')
-
-                res.test.ypred = res.test.ypred + test_global_pred
-                res.test.ytrue = test_target.rename('ytrue')
             else:
                 fit_data = FitData(train_target,
                                    test_target,
                                    features_train,
                                    features_test,
                                    )
+                yield pair, ProductFitData(fit_data,
+                                           vol_rescaling=ufd.vol_rescalings[pair] if ufd.vol_rescalings else None,
+                                           global_pred_targets=None)
 
-                res = fit_eval_model(fit_data,
-                                     model_options)
 
-            # double-check the train prediction is demeaned
-            if model_options.cap_oos_quantile is not None:
-                wins = scipy.stats.mstats.winsorize(res.train.ypred, model_options.cap_oos_quantile)
-                lo = wins.min()
-                hi = wins.max()
-                res.test.ypred[res.test.ypred < lo] = lo
-                res.test.ypred[res.test.ypred > hi] = hi
+def fit_product(pfd: ProductFitData, model_options: ModelOptions):
+    res = fit_eval_model(pfd.data,
+                         model_options)
 
-            if ufd.vol_rescalings is not None:
-                res.test.ypred *= ufd.vol_rescalings[pair]
-                res.test.ytrue *= ufd.vol_rescalings[pair]
+    if pfd.global_pred_targets:
+        res.train.ypred = res.train.ypred + pfd.global_pred_targets.global_pred_train
+        res.train.ytrue = pfd.global_pred_targets.orig_target_train.rename('ytrue')
 
-            assert (res.train.ypred.index == res.train.ytrue.index).all()
-            assert (res.test.ypred.index == res.test.ytrue.index).all()
+        res.test.ypred = res.test.ypred + pfd.global_pred_targets.global_pred_test
+        res.test.ytrue = pfd.global_pred_targets.orig_target_test.rename('ytrue')
 
-            ress[pair] = res
+    # double-check the train prediction is demeaned
+    if model_options.cap_oos_quantile is not None:
+        wins = scipy.stats.mstats.winsorize(res.train.ypred, model_options.cap_oos_quantile)
+        lo = wins.min()
+        hi = wins.max()
+        res.test.ypred[res.test.ypred < lo] = lo
+        res.test.ypred[res.test.ypred > hi] = hi
 
-        return ress
+    if pfd.vol_rescaling is not None:
+        res.test.ypred *= pfd.vol_rescaling
+        res.test.ytrue *= pfd.vol_rescaling
+
+    assert (res.train.ypred.index == res.train.ytrue.index).all()
+    assert (res.test.ypred.index == res.test.ytrue.index).all()
+
+    return res

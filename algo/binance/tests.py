@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
-from algo.binance.fit import fit_eval_model, UniverseDataOptions
+from algo.binance.fit import fit_eval_model, UniverseDataOptions, fit_product
 from algo.binance.coins import Universe, load_universe_candles, all_symbols, top_mcap, symbol_to_ids
 from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions, EmaOptions
 
@@ -14,108 +14,15 @@ from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions, EmaO
 class TestUniverseDataStore(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
-        coins = ['btc',
-                 'ada',
-                 'xrp',
-                 'dot',
-                 'doge',
-                 'matic',
-                 'algo',
-                 'ltc',
-                 'atom',
-                 'link',
-                 'near',
-                 'bch',
-                 'xlm',
-                 'axs',
-                 'vet',
-                 'hbar',
-                 'fil',
-                 'egld',
-                 'theta',
-                 'icp',
-                 'etc',
-                 'xmr',
-                 'xtz',
-                 'aave',
-                 'gala',
-                 'grt',
-                 'klay',
-                 'cake',
-                 'ar',
-                 'eos',
-                 'lrc',
-                 'ksm',
-                 'enj',
-                 'qnt',
-                 'amp',
-                 'cvx',
-                 'crv',
-                 'mkr',
-                 'xec',
-                 'kda',
-                 'tfuel',
-                 'spell',
-                 'sushi',
-                 'bat',
-                 'neo',
-                 'celo',
-                 'zec',
-                 'osmo',
-                 'chz',
-                 'waves',
-                 'dash',
-                 'fxs',
-                 'nexo',
-                 'comp',
-                 'mina',
-                 'yfi',
-                 'iotx',
-                 'xem',
-                 'snx',
-                 'zil',
-                 'rvn',
-                 '1inch',
-                 'gno',
-                 'lpt',
-                 'dcr',
-                 'qtum',
-                 'ens',
-                 'icx',
-                 'waxp',
-                 'omg',
-                 'ankr',
-                 'scrt',
-                 'sc',
-                 'bnt',
-                 'woo',
-                 'zen',
-                 'iost',
-                 'btg',
-                 'rndr',
-                 'zrx',
-                 'slp',
-                 'anc',
-                 'ckb',
-                 'ilv',
-                 'sys',
-                 'uma',
-                 'kava',
-                 'ont',
-                 'hive',
-                 'perp',
-                 'wrx',
-                 'skl',
-                 'flux',
-                 'ren',
-                 'mbox',
-                 'ant',
-                 'ray',
-                 'dgb',
-                 'movr',
-                 'nu']
-
-        coins = coins[:3]
+        coins = ['btc', 'eth', 'ada', 'xrp', 'dot', 'doge', 'matic', 'algo', 'ltc', 'atom', 'link', 'near', 'bch',
+                 'xlm', 'axs', 'vet', 'hbar', 'fil', 'egld', 'theta', 'icp', 'etc', 'xmr', 'xtz', 'aave', 'gala', 'grt',
+                 'klay', 'cake', 'ar', 'eos', 'lrc', 'ksm', 'enj', 'qnt', 'amp', 'cvx', 'crv', 'mkr', 'xec', 'kda',
+                 'tfuel', 'spell', 'sushi', 'bat', 'neo', 'celo', 'zec', 'osmo', 'chz', 'waves', 'dash', 'fxs', 'nexo',
+                 'comp', 'mina', 'yfi', 'iotx', 'xem', 'snx', 'zil', 'rvn', '1inch', 'gno', 'lpt', 'dcr', 'qtum', 'ens',
+                 'icx', 'waxp', 'omg', 'ankr', 'scrt', 'sc', 'bnt', 'woo', 'zen', 'iost', 'btg', 'rndr', 'zrx', 'slp',
+                 'anc', 'ckb', 'ilv', 'sys', 'uma', 'kava', 'ont', 'hive', 'perp', 'wrx', 'skl', 'flux', 'ren', 'mbox',
+                 'ant', 'ray', 'dgb', 'movr', 'nu']
+        coins = coins[:4]
         universe = Universe(coins)
 
         start_date = datetime.datetime(year=2022, month=1, day=1)
@@ -152,7 +59,7 @@ class TestUniverseDataStore(unittest.TestCase):
         fit_options = UniverseDataOptions(demean=True,
                                           forward_hour=24,
                                           target_scaler=lambda: RobustScaler())
-        data = uds.prepare_data(fit_options)
+        ufd = uds.prepare_data(fit_options)
 
         global_opt = ModelOptions(
             get_lm=lambda: Ridge(alpha=0),
@@ -161,7 +68,7 @@ class TestUniverseDataStore(unittest.TestCase):
             cap_oos_quantile=None
             # cap_oos_quantile=0.05
         )
-        data_global = uds.prepare_data_global(data)
+        data_global = uds.prepare_data_global(ufd)
         global_fit = fit_eval_model(data_global, global_opt)
 
         opt = ModelOptions(
@@ -170,7 +77,9 @@ class TestUniverseDataStore(unittest.TestCase):
             transform_model_after_fit=transform_model_after_fit,
             cap_oos_quantile=quantile_cap
         )
-        ress = uds.fit_products(data, opt, global_fit)
+        ress = {}
+        for pair, product_data in uds.gen_product_data(ufd, global_fit):
+            ress[pair] = fit_product(product_data, opt)
 
         print(list(ress.values())[0].test.ypred.min(), list(ress.values())[0].test.ypred.max())
         # print(r2_score(list(ress.values())[0].test.ytrue, list(ress.values())[0].test.ypred))
