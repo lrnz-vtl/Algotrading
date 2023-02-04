@@ -1,11 +1,14 @@
 import datetime
 import logging
 import unittest
+
+import numpy as np
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
-from algo.binance.coins import Universe, load_universe_candles, basep, all_symbols, top_mcap, symbol_to_ids
-from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions, UniverseFitOptions
+from algo.binance.fit import fit_eval_model, UniverseDataOptions
+from algo.binance.coins import Universe, load_universe_candles, all_symbols, top_mcap, symbol_to_ids
+from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions, EmaOptions
 
 
 class TestUniverseDataStore(unittest.TestCase):
@@ -112,7 +115,7 @@ class TestUniverseDataStore(unittest.TestCase):
                  'movr',
                  'nu']
 
-        coins = coins[:20]
+        coins = coins[:3]
         universe = Universe(coins)
 
         start_date = datetime.datetime(year=2022, month=1, day=1)
@@ -124,14 +127,16 @@ class TestUniverseDataStore(unittest.TestCase):
 
         df.set_index(['pair', time_col], inplace=True)
         self.price_ts = ((df['Close'] + df['Open']) / 2.0).rename('price')
+        self.logret_ts = (np.log(df['Close']) - np.log(df['Open'])).rename('logret')
+        self.volume_ts = df['Volume']
 
         super().__init__(*args, **kwargs)
 
-    def test_a(self):
-        decay_hours = [1/12, 4, 12, 24, 48, 96]
+    def _aa(self, quantile_cap: float):
+        ema_options = EmaOptions([4, 12, 24, 48, 96], include_volumes=True)
         ro = ResidOptions(market_pairs={'BTCUSDT'})
 
-        uds = UniverseDataStore(self.price_ts, decay_hours, ro)
+        uds = UniverseDataStore(self.price_ts, self.logret_ts, self.volume_ts, ema_options, ro)
 
         alpha = 1.0
 
@@ -144,26 +149,37 @@ class TestUniverseDataStore(unittest.TestCase):
         def transform_model_after_fit(lm):
             return lm
 
+        fit_options = UniverseDataOptions(demean=True,
+                                          forward_hour=24,
+                                          target_scaler=lambda: RobustScaler())
+        data = uds.prepare_data(fit_options)
+
         global_opt = ModelOptions(
             get_lm=lambda: Ridge(alpha=0),
             transform_fit_target=transform_fit_target,
             transform_model_after_fit=transform_model_after_fit,
+            cap_oos_quantile=None
+            # cap_oos_quantile=0.05
         )
-        # global_opt = None
+        data_global = uds.prepare_data_global(data)
+        global_fit = fit_eval_model(data_global, global_opt)
 
         opt = ModelOptions(
             get_lm=get_lm,
             transform_fit_target=transform_fit_target,
             transform_model_after_fit=transform_model_after_fit,
+            cap_oos_quantile=quantile_cap
         )
-        fit_options = UniverseFitOptions(demean=True,
-                                         global_model_options=global_opt,
-                                         forward_hour=24,
-                                         target_scaler=lambda: RobustScaler()
-                                         )
+        ress = uds.fit_products(data, opt, global_fit)
 
-        global_res = uds.fit_global(fit_options)
-        uds.fit_products(global_res, opt)
+        print(list(ress.values())[0].test.ypred.min(), list(ress.values())[0].test.ypred.max())
+        # print(r2_score(list(ress.values())[0].test.ytrue, list(ress.values())[0].test.ypred))
+
+    def test_a(self):
+        self._aa(0.00001)
+
+    def test_b(self):
+        self._aa(0.4)
 
 
 class TestSymbols(unittest.TestCase):

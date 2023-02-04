@@ -1,11 +1,10 @@
 import logging
-from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import Callable, Optional, Any
 import numpy as np
 import pandas as pd
-from algo.cpp.cseries import shift_forward, compute_ema
-from sklearn.base import BaseEstimator
+import scipy.stats.mstats
+from algo.cpp.cseries import shift_forward, compute_ema, compute_expsum
 from sklearn.linear_model._base import LinearModel
 from algo.binance.compute_betas import BetaStore
 
@@ -36,63 +35,124 @@ class FitResults:
 @dataclass
 class ModelOptions:
     get_lm: Callable[[], LinearModel]
+    cap_oos_quantile: Optional[float]
     transform_fit_target: Optional[Callable] = None
     transform_model_after_fit: Optional[Callable] = None
 
 
-def emas_diffs_from_price(price_ts: pd.Series, decays_hours: list[float]) -> pd.DataFrame:
+@dataclass
+class EmaOptions:
+    decay_hours: list[int]
+    include_volumes: bool
+    include_current: bool = True
+
+
+@dataclass
+class ResidOptions:
+    market_pairs: set[str]
+    hours_forward: int = 1
+
+
+@dataclass
+class UniverseDataOptions:
+    demean: bool
+    forward_hour: int
+    target_scaler: Optional[Callable[[], Any]]
+
+
+@dataclass
+class FitData:
+    train_target: pd.Series
+    test_target: pd.Series
+    features_train: pd.DataFrame
+    features_test: pd.DataFrame
+
+
+@dataclass
+class UniverseFitData:
+    train_targets: dict[str, pd.Series]
+    test_targets: dict[str, pd.Series]
+    vol_rescalings: Optional[dict[str, float]]
+
+
+@dataclass
+class UniverseFitResults:
+    train_targets: dict[str, pd.Series]
+    test_targets: dict[str, pd.Series]
+    vol_rescalings: Optional[dict[str, float]]
+    res_global: Optional[FitResults]
+
+
+def emas_diffs_from_price(price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series,
+                          ema_options: EmaOptions) -> pd.DataFrame:
     fts = []
 
-    assert len(decays_hours) > 0
+    assert len(ema_options.decay_hours) > 0
 
     def make_ema(dh):
         dms = ms_in_hour * dh
         return compute_ema(price_ts.index, price_ts.values, dms)
 
-    logema0 = make_ema(decays_hours[0])
-    for dh in decays_hours[1:]:
+    if ema_options.include_current:
+        logema0 = np.log(price_ts)
+        decays_hours = ema_options.decay_hours
+    else:
+        logema0 = make_ema(ema_options.decay_hours[0])
+        decays_hours = ema_options.decay_hours[1:]
+
+    for dh in decays_hours:
         ema = make_ema(dh)
         ft = np.log(ema) - logema0
-        fts.append(pd.Series(ft, index=price_ts.index))
+        fts.append(pd.Series(ft, index=price_ts.index, name=f'ema_{dh}'))
+
+    if ema_options.include_volumes:
+        for dh in decays_hours:
+            # NOTE Assumes five minutes separated rows
+            alpha = 1.0 - np.exp(-1 / (12 * dh))
+            logretvol_expsum = compute_expsum((logret_ts * volume_ts).values, alpha)
+            # FIXME Do this with no lookahead
+            ft = logretvol_expsum / volume_ts.median()
+            fts.append(pd.Series(ft, index=price_ts.index, name=f'logretvol_{dh}'))
 
     return pd.concat(fts, axis=1)
 
 
-def fit_eval_model(Xtrain,
-                   Xtest,
-                   ytrain,
-                   ytest,
+def fit_eval_model(data: FitData,
                    opt: ModelOptions):
     lm = opt.get_lm()
 
     if opt.transform_fit_target:
-        ytrain = pd.Series(opt.transform_fit_target(ytrain), index=ytrain.index)
+        ytrain = pd.Series(opt.transform_fit_target(data.train_target), index=data.train_target.index)
+    else:
+        ytrain = data.train_target
 
-    lm.fit(Xtrain, ytrain)
+    lm.fit(data.features_train, ytrain)
 
     if opt.transform_model_after_fit:
         lm = opt.transform_model_after_fit(lm)
 
-    ypred_train = pd.Series(lm.predict(Xtrain), index=ytrain.index)
-
-    ypred_test = pd.Series(lm.predict(Xtest), index=ytest.index)
+    ypred_train = pd.Series(lm.predict(data.features_train), index=data.train_target.index)
+    ypred_test = pd.Series(lm.predict(data.features_test), index=data.test_target.index)
 
     return FitResults(
         fitted_model=lm,
         train=TrainTestData(ypred=ypred_train.rename('ypred'),
-                            ytrue=ytrain.rename('ytrue')),
+                            ytrue=data.train_target.rename('ytrue')),
         test=TrainTestData(ypred=ypred_test.rename('ypred'),
-                           ytrue=ytest.rename('ytrue')),
+                           ytrue=data.test_target.rename('ytrue')),
     )
 
 
 class ProductDataStore:
 
-    def __init__(self, price_ts: pd.Series, decay_hours: list[int]):
+    def __init__(self, price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series, ema_options: EmaOptions):
         self.logger = logging.getLogger(__name__)
 
+        assert (price_ts.index == logret_ts.index).all()
+        assert (price_ts.index == volume_ts.index).all()
+
         self.price_ts = price_ts
-        self.feature_df = emas_diffs_from_price(price_ts, decay_hours)
+        self.feature_df = emas_diffs_from_price(price_ts, logret_ts, volume_ts, ema_options)
 
         end_train_time = self.feature_df.index.min() + train_months * ms_in_month
         self.start_test_time = end_train_time + max_lag_hours * ms_in_hour
@@ -105,36 +165,16 @@ class ProductDataStore:
 
     def make_target(self, forward_hour: int) -> tuple[pd.Series, pd.Series]:
         fms = ms_in_hour * forward_hour
+        forward_price_0 = shift_forward(self.price_ts.index, self.price_ts.values, 1)
         forward_price = shift_forward(self.price_ts.index, self.price_ts.values, fms)
-        target = np.log(forward_price) - np.log(self.price_ts)
+        target = pd.Series(np.log(forward_price) - np.log(forward_price_0), index=self.price_ts.index)
 
         return target.loc[self.train_idx], target.loc[self.test_idx]
 
 
-@dataclass
-class ResidOptions:
-    market_pairs: set[str]
-    hours_forward: int = 1
-
-
-@dataclass
-class UniverseFitOptions:
-    demean: bool
-    forward_hour: int
-    target_scaler: Optional[Callable[[], Any]]
-    global_model_options: Optional[ModelOptions]
-
-
-@dataclass
-class UniverseFitResults:
-    train_targets: dict[str, pd.Series]
-    test_targets: dict[str, pd.Series]
-    vol_rescalings: Optional[dict[str, float]]
-    res_global: Optional[FitResults]
-
-
 class UniverseDataStore:
-    def __init__(self, price_ts: pd.Series, decay_hours: list, resid_options: Optional[ResidOptions]):
+    def __init__(self, price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series,
+                 ema_options: EmaOptions, resid_options: Optional[ResidOptions]):
 
         self.logger = logging.getLogger(__name__)
 
@@ -149,7 +189,9 @@ class UniverseDataStore:
         mkt_features = []
         for pair in resid_options.market_pairs:
             assert pair in pairs
-            mkt_features.append(emas_diffs_from_price(price_ts.loc[pair], decay_hours))
+            mkt_features.append(emas_diffs_from_price(price_ts.loc[pair], logret_ts.loc[pair], volume_ts.loc[pair],
+                                                      ema_options))
+
         if mkt_features:
             self.mkt_features = pd.concat(mkt_features, axis=1)
         else:
@@ -159,7 +201,7 @@ class UniverseDataStore:
             if pair in resid_options.market_pairs:
                 continue
             try:
-                ds = ProductDataStore(price_ts.loc[pair], decay_hours)
+                ds = ProductDataStore(price_ts.loc[pair], logret_ts.loc[pair], volume_ts.loc[pair], ema_options)
                 min_test_time = min(min_test_time, ds.start_test_time)
             except NotEnoughDataException as e:
                 self.logger.warning(f'Not enough data for {pair=}. Skipping.')
@@ -174,15 +216,16 @@ class UniverseDataStore:
                                 min_test_time=min_test_time,
                                 hours_forward=resid_options.hours_forward)
 
-    def fit_global(self, fit_options: UniverseFitOptions) -> UniverseFitResults:
+    def prepare_data(self, fit_options: UniverseDataOptions) -> UniverseFitData:
         train_targets = {}
         test_targets = {}
 
+        pairs = self.pairs
         for pair, ds in self.pds.items():
             train_targets[pair], test_targets[pair] = ds.make_target(forward_hour=fit_options.forward_hour)
 
         if self.bs:
-            for pair in self.pairs:
+            for pair in pairs:
                 beta = self.bs.compute_beta(train_targets[pair])
                 train_targets[pair] = self.bs.residualise(beta, train_targets[pair])
                 test_targets[pair] = self.bs.residualise(beta, test_targets[pair])
@@ -191,7 +234,7 @@ class UniverseDataStore:
             train_ret_df = pd.DataFrame(train_targets)
             test_ret_df = pd.DataFrame(test_targets)
 
-            for pair in self.pairs:
+            for pair in pairs:
                 train_targets[pair] = train_targets[pair] - train_ret_df.mean(axis=1).loc[train_targets[pair].index]
                 test_targets[pair] = test_targets[pair] - test_ret_df.mean(axis=1).loc[test_targets[pair].index]
 
@@ -200,51 +243,45 @@ class UniverseDataStore:
 
         if fit_options.target_scaler is not None:
             vol_rescalings = {}
-            for pair in self.pairs:
-                vol_rescalings[pair] = fit_options.target_scaler().fit(train_targets[pair].values.reshape(-1, 1)).scale_[0]
+            for pair in pairs:
+                vol_rescalings[pair] = \
+                    fit_options.target_scaler().fit(train_targets[pair].values.reshape(-1, 1)).scale_[0]
                 train_targets[pair] /= vol_rescalings[pair]
                 test_targets[pair] /= vol_rescalings[pair]
         else:
             vol_rescalings = None
 
-        if fit_options.global_model_options:
-            train_target = pd.concat((train_targets[pair] for pair in self.pairs), axis=0)
-            test_target = pd.concat((test_targets[pair] for pair in self.pairs), axis=0)
+        return UniverseFitData(train_targets=train_targets,
+                               test_targets=test_targets,
+                               vol_rescalings=vol_rescalings)
 
-            features_train = pd.concat((self.pds[pair].feature_df[self.pds[pair].train_idx] for pair in self.pairs),
-                                       axis=0)
-            features_test = pd.concat((self.pds[pair].feature_df[self.pds[pair].test_idx] for pair in self.pairs),
-                                      axis=0)
+    def prepare_data_global(self, ufd: UniverseFitData) -> FitData:
+        pairs = self.pairs
 
-            if self.mkt_features is not None:
-                features_train = pd.concat([features_train, self.mkt_features.loc[features_train.index].fillna(0)],
-                                           axis=1)
-                features_test = pd.concat([features_test, self.mkt_features.loc[features_test.index].fillna(0)], axis=1)
+        train_target = pd.concat((ufd.train_targets[pair] for pair in pairs), axis=0)
+        test_target = pd.concat((ufd.test_targets[pair] for pair in pairs), axis=0)
 
-            res_global = fit_eval_model(features_train, features_test, train_target, test_target,
-                                        fit_options.global_model_options)
-            del features_train
-            del features_test
+        features_train = pd.concat((self.pds[pair].feature_df[self.pds[pair].train_idx] for pair in pairs),
+                                   axis=0)
+        features_test = pd.concat((self.pds[pair].feature_df[self.pds[pair].test_idx] for pair in pairs),
+                                  axis=0)
 
-        else:
-            res_global = None
+        if self.mkt_features is not None:
+            features_train = pd.concat([features_train, self.mkt_features.loc[features_train.index].fillna(0)],
+                                       axis=1)
+            features_test = pd.concat([features_test, self.mkt_features.loc[features_test.index].fillna(0)], axis=1)
 
-        return UniverseFitResults(train_targets=train_targets,
-                                  test_targets=test_targets,
-                                  res_global=res_global,
-                                  vol_rescalings=vol_rescalings)
+        return FitData(train_target=train_target, test_target=test_target,
+                       features_train=features_train, features_test=features_test)
 
-    def fit_products(self, ur: UniverseFitResults, model_options: ModelOptions, exclude_pairs: set[str] = None) -> dict[
-        str, FitResults]:
+    def fit_products(self, ufd: UniverseFitData, model_options: ModelOptions,
+                     global_fit_results: Optional[FitResults]) -> dict[str, FitResults]:
 
         ress = {}
 
         for pair, ds in self.pds.items():
-            if exclude_pairs is not None and pair in exclude_pairs:
-                continue
-
-            train_target = ur.train_targets[pair]
-            test_target = ur.test_targets[pair]
+            train_target = ufd.train_targets[pair]
+            test_target = ufd.test_targets[pair]
 
             features_train = ds.feature_df[ds.train_idx]
             features_test = ds.feature_df[ds.test_idx]
@@ -254,31 +291,48 @@ class UniverseDataStore:
                                            axis=1)
                 features_test = pd.concat([features_test, self.mkt_features.loc[features_test.index].fillna(0)], axis=1)
 
-            if ur.res_global:
-                train_global_pred = ur.res_global.fitted_model.predict(features_train)
-                test_global_pred = ur.res_global.fitted_model.predict(features_test)
+            if global_fit_results is not None:
+                train_global_pred = global_fit_results.fitted_model.predict(features_train)
+                test_global_pred = global_fit_results.fitted_model.predict(features_test)
 
                 train_residual = train_target - train_global_pred
                 test_residual = test_target - test_global_pred
 
-                res = fit_eval_model(features_train,
-                                     features_test,
-                                     train_residual,
-                                     test_residual,
+                fit_data = FitData(train_residual,
+                                   test_residual,
+                                   features_train,
+                                   features_test,
+                                   )
+
+                res = fit_eval_model(fit_data,
                                      model_options)
+
+                res.train.ypred = res.train.ypred + train_global_pred
+                res.train.ytrue = train_target.rename('ytrue')
 
                 res.test.ypred = res.test.ypred + test_global_pred
                 res.test.ytrue = test_target.rename('ytrue')
             else:
-                res = fit_eval_model(features_train,
-                                     features_test,
-                                     train_target,
-                                     test_target,
+                fit_data = FitData(train_target,
+                                   test_target,
+                                   features_train,
+                                   features_test,
+                                   )
+
+                res = fit_eval_model(fit_data,
                                      model_options)
 
-            if ur.vol_rescalings is not None:
-                res.test.ypred *= ur.vol_rescalings[pair]
-                res.test.ytrue *= ur.vol_rescalings[pair]
+            # double-check the train prediction is demeaned
+            if model_options.cap_oos_quantile is not None:
+                wins = scipy.stats.mstats.winsorize(res.train.ypred, model_options.cap_oos_quantile)
+                lo = wins.min()
+                hi = wins.max()
+                res.test.ypred[res.test.ypred < lo] = lo
+                res.test.ypred[res.test.ypred > hi] = hi
+
+            if ufd.vol_rescalings is not None:
+                res.test.ypred *= ufd.vol_rescalings[pair]
+                res.test.ytrue *= ufd.vol_rescalings[pair]
 
             assert (res.train.ypred.index == res.train.ytrue.index).all()
             assert (res.test.ypred.index == res.test.ytrue.index).all()

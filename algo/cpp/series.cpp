@@ -21,16 +21,32 @@ double EMA::updated_value(ulong t, double value) {
     double decay_factor = exp(-double(t-m_last_t)/m_decay_scale);
 
     if (std::isnan(m_last_value)) {
-        // std::cout << "last value is nan" << std::endl;
         m_last_value = value;
     } else {
-        // std::cout << "decay_factor = " << decay_factor << std::endl;
         m_last_value = value * (1-decay_factor) + m_last_value * decay_factor;
-        // std::cout << "new last value = " << m_last_value << std::endl;
     }
     m_last_t = t;
     return m_last_value;
 }
+
+ExpSum::ExpSum(double alpha) : m_alpha(alpha) {
+    m_last_value = std::numeric_limits<double>::quiet_NaN();
+}
+
+double ExpSum::updated_value(double value) {
+    if (std::isnan(value)) {
+        std::cout << "value is nan" << std::endl;
+        return m_last_value;
+    }
+
+    if (std::isnan(m_last_value)) {
+        m_last_value = value;
+    } else {
+        m_last_value = value  + m_alpha * m_last_value;
+    }
+    return m_last_value;
+}
+
 
 py::array_t<double> compute_ema(py::array_t<ulong> ts, py::array_t<double> xs, double decay_scale)
 {
@@ -53,6 +69,22 @@ py::array_t<double> compute_ema(py::array_t<ulong> ts, py::array_t<double> xs, d
     }
     return ret;
 }
+
+py::array_t<double> compute_expsum(py::array_t<double> xs, double alpha)
+{
+    py::buffer_info xs_buf = xs.request();
+    double *xs_ptr = static_cast<double *>(xs_buf.ptr);
+
+    auto ret = py::array_t<double>(xs_buf.size);
+    auto ptr = static_cast<double *> (ret.request().ptr);
+    auto expsum = ExpSum(alpha);
+
+    for(auto i=0; i<xs_buf.size; i++) {
+        ptr[i] = expsum.updated_value(xs_ptr[i]);
+    }
+    return ret;
+}
+
 
 
 py::array_t<double> shift_forward(py::array_t<ulong> ts, py::array_t<double> xs, ulong delta) {
@@ -88,4 +120,6 @@ PYBIND11_MODULE(cseries, m) {
     m.def("shift_forward", &shift_forward, "shift time series forward");
 
     m.def("compute_ema", &compute_ema, "compute_ema");
+
+    m.def("compute_expsum", &compute_expsum, "compute_expsum");
 }

@@ -1,8 +1,6 @@
 import pandas as pd
 from matplotlib import pyplot as plt
-
 from algo.binance.fit import FitResults
-
 
 
 def plot_row(xxsum, xysum, x, y, title: str):
@@ -12,7 +10,7 @@ def plot_row(xxsum, xysum, x, y, title: str):
     axs[0].plot(pd.to_datetime(xysum.index, unit='ms'), xysum, label='xysum');
 
     axs[1].plot(pd.to_datetime(x.index, unit='ms'), x, label='x');
-    axs[1].plot(pd.to_datetime(y.index, unit='ms'), y/y.std()*x.std(), label='y');
+    axs[1].plot(pd.to_datetime(y.index, unit='ms'), y / y.std() * x.std(), label='y');
 
     axs[0].legend();
     axs[0].grid();

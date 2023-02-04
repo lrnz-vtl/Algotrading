@@ -17,3 +17,11 @@ class EMA {
     EMA(double);
     double updated_value(ulong, double);
 };
+
+class ExpSum {
+    double m_last_value, m_alpha;
+
+    public:
+    ExpSum(double);
+    double updated_value(double);
+};
