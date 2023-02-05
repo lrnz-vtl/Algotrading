@@ -6,9 +6,10 @@ import numpy as np
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
+from algo.binance.features import FeatureOptions, VolumeOptions
 from algo.binance.fit import fit_eval_model, UniverseDataOptions, fit_product
 from algo.binance.coins import Universe, load_universe_candles, all_symbols, top_mcap, symbol_to_ids
-from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions, EmaOptions
+from algo.binance.fit import UniverseDataStore, ModelOptions, ResidOptions
 
 
 class TestUniverseDataStore(unittest.TestCase):
@@ -33,17 +34,16 @@ class TestUniverseDataStore(unittest.TestCase):
         df = load_universe_candles(universe, start_date, end_date, '5m')
 
         df.set_index(['pair', time_col], inplace=True)
-        self.price_ts = ((df['Close'] + df['Open']) / 2.0).rename('price')
-        self.logret_ts = (np.log(df['Close']) - np.log(df['Open'])).rename('logret')
-        self.volume_ts = df['Volume']
+        self.df = df
 
         super().__init__(*args, **kwargs)
 
     def _aa(self, quantile_cap: float):
-        ema_options = EmaOptions([4, 12, 24, 48, 96], include_volumes=True)
+        vol = VolumeOptions(include_imbalance=True, include_logretvol=True)
+        ema_options = FeatureOptions([4, 12, 24, 48, 96], vol)
         ro = ResidOptions(market_pairs={'BTCUSDT'})
 
-        uds = UniverseDataStore(self.price_ts, self.logret_ts, self.volume_ts, ema_options, ro)
+        uds = UniverseDataStore(self.df, ema_options, ro)
 
         alpha = 1.0
 

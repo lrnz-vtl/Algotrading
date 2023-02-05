@@ -7,8 +7,8 @@ import scipy.stats.mstats
 from algo.cpp.cseries import shift_forward, compute_ema, compute_expsum
 from sklearn.linear_model._base import LinearModel
 from algo.binance.compute_betas import BetaStore
+from algo.binance.features import ms_in_hour, FeatureOptions, features_from_data
 
-ms_in_hour = (10 ** 3) * 60 * 60
 max_lag_hours = 48
 
 ms_in_month = ms_in_hour * 30 * 24
@@ -38,13 +38,6 @@ class ModelOptions:
     cap_oos_quantile: Optional[float]
     transform_fit_target: Optional[Callable] = None
     transform_model_after_fit: Optional[Callable] = None
-
-
-@dataclass
-class EmaOptions:
-    decay_hours: list[int]
-    include_volumes: bool
-    include_current: bool = True
 
 
 @dataclass
@@ -98,40 +91,6 @@ class UniverseFitResults:
     res_global: Optional[FitResults]
 
 
-def emas_diffs_from_price(price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series,
-                          ema_options: EmaOptions) -> pd.DataFrame:
-    fts = []
-
-    assert len(ema_options.decay_hours) > 0
-
-    def make_ema(dh):
-        dms = ms_in_hour * dh
-        return compute_ema(price_ts.index, price_ts.values, dms)
-
-    if ema_options.include_current:
-        logema0 = np.log(price_ts)
-        decays_hours = ema_options.decay_hours
-    else:
-        logema0 = make_ema(ema_options.decay_hours[0])
-        decays_hours = ema_options.decay_hours[1:]
-
-    for dh in decays_hours:
-        ema = make_ema(dh)
-        ft = np.log(ema) - logema0
-        fts.append(pd.Series(ft, index=price_ts.index, name=f'ema_{dh}'))
-
-    if ema_options.include_volumes:
-        for dh in decays_hours:
-            # NOTE Assumes five minutes separated rows
-            alpha = 1.0 - np.exp(-1 / (12 * dh))
-            logretvol_expsum = compute_expsum((logret_ts * volume_ts).values, alpha)
-            # FIXME Do this with no lookahead
-            ft = logretvol_expsum / volume_ts.median()
-            fts.append(pd.Series(ft, index=price_ts.index, name=f'logretvol_{dh}'))
-
-    return pd.concat(fts, axis=1)
-
-
 def fit_eval_model(data: FitData,
                    opt: ModelOptions):
     lm = opt.get_lm()
@@ -160,14 +119,11 @@ def fit_eval_model(data: FitData,
 
 class ProductDataStore:
 
-    def __init__(self, price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series, ema_options: EmaOptions):
+    def __init__(self, df: pd.DataFrame, ema_options: FeatureOptions):
         self.logger = logging.getLogger(__name__)
 
-        assert (price_ts.index == logret_ts.index).all()
-        assert (price_ts.index == volume_ts.index).all()
-
-        self.price_ts = price_ts
-        self.feature_df = emas_diffs_from_price(price_ts, logret_ts, volume_ts, ema_options)
+        self.price_ts = ((df['Close'] + df['Open']) / 2.0).rename('price')
+        self.feature_df = features_from_data(df, ema_options)
 
         end_train_time = self.feature_df.index.min() + train_months * ms_in_month
         self.start_test_time = end_train_time + max_lag_hours * ms_in_hour
@@ -188,10 +144,11 @@ class ProductDataStore:
 
 
 class UniverseDataStore:
-    def __init__(self, price_ts: pd.Series, logret_ts: pd.Series, volume_ts: pd.Series,
-                 ema_options: EmaOptions, resid_options: Optional[ResidOptions]):
+    def __init__(self, df: pd.DataFrame, ema_options: FeatureOptions, resid_options: Optional[ResidOptions]):
 
         self.logger = logging.getLogger(__name__)
+
+        price_ts = ((df['Close'] + df['Open']) / 2.0).rename('price')
 
         assert len(price_ts.index.names) == 2
         pairs = price_ts.index.get_level_values('pair').unique()
@@ -204,8 +161,7 @@ class UniverseDataStore:
         mkt_features = []
         for pair in resid_options.market_pairs:
             assert pair in pairs
-            mkt_features.append(emas_diffs_from_price(price_ts.loc[pair], logret_ts.loc[pair], volume_ts.loc[pair],
-                                                      ema_options))
+            mkt_features.append(features_from_data(df.loc[pair], ema_options))
 
         if mkt_features:
             self.mkt_features = pd.concat(mkt_features, axis=1)
@@ -216,7 +172,7 @@ class UniverseDataStore:
             if pair in resid_options.market_pairs:
                 continue
             try:
-                ds = ProductDataStore(price_ts.loc[pair], logret_ts.loc[pair], volume_ts.loc[pair], ema_options)
+                ds = ProductDataStore(df.loc[pair], ema_options)
                 min_test_time = min(min_test_time, ds.start_test_time)
             except NotEnoughDataException as e:
                 self.logger.warning(f'Not enough data for {pair=}. Skipping.')

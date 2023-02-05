@@ -1,46 +1,45 @@
 import requests
 import datetime
 import datetime as dt
-import pandas as pd
-from matplotlib import pyplot as plt
+import asyncio
+import websockets
+from binance import Client, ThreadedWebsocketManager, ThreadedDepthCacheManager
 
-# apikey=**my api
-# secret=**my api
+client = Client(api_key, api_secret)
 
+# get market depth
+depth = client.get_order_book(symbol='BNBBTC')
 
-
-# historical price data from binance api
 symbol = "BTCUSDT"
-period = "5m"
-limit = "1000"
-startDT = dt.datetime(2022, 1, 10, 00, 00, 00)
-endDT = dt.datetime(2022, 1, 11, 00, 00, 00)
 
-startTime = int(datetime.datetime.timestamp(startDT)) * 1000
-endTime = int(datetime.datetime.timestamp(endDT)) * 1000
+# url = f'https://api.binance.com/api/v3/depth?symbol={symbol}'
+ws_url = 'wss://stream.binance.com:9443'
 
-print(startTime, endTime)
+# fetch 1 minute klines for the last day up until now
+klines = client.get_historical_klines("BNBBTC", Client.KLINE_INTERVAL_5MINUTE, "1 day ago UTC")
 
-# url = f'https://www.binance.com/futures/data/openInterestHist?symbol={symbol}&period={period}&limit={limit}'
-# url = f'https://www.binance.com/futures/data/openInterestHist?symbol={symbol}&period={period}&limit={limit}&startTime={startTime}&endTime={endTime}'
-url = f'https://www.binance.com/api/v3/klines?symbol={symbol}&interval={period}&limit={limit}&startTime={startTime}&endTime={endTime}'
 
-oi_data = requests.get(url)
+# socket manager using threads
+twm = ThreadedWebsocketManager()
+twm.start()
 
-oi_json = oi_data.json()
+# depth cache manager using threads
+dcm = ThreadedDepthCacheManager()
+dcm.start()
 
-print(len(oi_json))
 
-# df = pd.DataFrame(oi_json).set_index('timestamp')
-# df.index = pd.to_datetime(df.index.astype(int), unit='ms')
-# df['sumOpenInterest'] = df['sumOpenInterest'].astype(float)
-# df['sumOpenInterest'].plot()
-# plt.show()
+def handle_socket_message(msg):
+    print(f"message type: {msg['e']}")
+    print(msg)
 
-# print(df)
 
-# symbol	STRING	YES
-# period	ENUM	YES	"5m","15m","30m","1h","2h","4h","6h","12h","1d"
-# limit	LONG	NO	default 30, max 500
-# startTime	LONG	NO
-# endTime	LONG	NO
+def handle_dcm_message(depth_cache):
+    print(f"symbol {depth_cache.symbol}")
+    print("top 5 bids")
+    print(depth_cache.get_bids()[:5])
+    print("top 5 asks")
+    print(depth_cache.get_asks()[:5])
+    print("last update time {}".format(depth_cache.update_time))
+
+
+dcm.start_depth_cache(callback=handle_dcm_message, symbol='ETHBTC')

@@ -5,20 +5,12 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
-from typing import Optional
-
 import pandas as pd
-import requests
 import datetime
-from joblib import Memory
 
-
-cachedir = '/home/lorenzo/caches'
-memory = Memory(cachedir, verbose=0)
+from algo.binance.cached_api import symbol_to_ids, get_mcap, RateLimitException
 
 basep = Path('/home/lorenzo/data/data.binance.vision')
-
-RateLimitException = Exception
 
 exclude_symbols = {'busd',
                    'dai',
@@ -47,26 +39,7 @@ hardcoded_ids = {'gmx': 'gmx',
                  'doge': 'dogecoin',
                  'xrp': 'ripple',
                  'uni': 'uniswap'
-}
-
-
-@memory.cache()
-def symbol_to_ids() -> dict[str, list[str]]:
-    url = 'https://api.coingecko.com/api/v3/coins/list'
-    x = requests.get(url)
-    coin_list = x.json()
-    ret = {}
-    for x in coin_list:
-        symbol = x['symbol']
-        if 'wormhole' in symbol:
-            continue
-        if 'binance-peg' in symbol:
-            continue
-        if symbol not in ret:
-            ret[symbol] = [x['id']]
-        else:
-            ret[symbol].append(x['id'])
-    return ret
+                 }
 
 
 def all_symbols():
@@ -75,29 +48,6 @@ def all_symbols():
         if symbol.endswith('down') or symbol.endswith('up') or symbol.endswith('bear') or symbol.endswith('bull'):
             continue
         yield symbol
-
-
-@memory.cache()
-def get_mcap(coin_id: str, date: datetime.date) -> Optional[float]:
-    logger = logging.getLogger(__name__)
-
-    date_str = date.strftime("%d-%m-%Y")
-
-    """ Memoize because of the rate limit """
-    url = f'https://api.coingecko.com/api/v3/coins/{coin_id}/history?date={date_str}'
-    oi_data = requests.get(url)
-    oi_json = oi_data.json()
-    if not oi_data.ok:
-        if oi_json['status']['error_message'].startswith("You've exceeded the Rate Limit"):
-            raise RateLimitException
-        raise requests.RequestException(oi_json)
-    if 'market_data' not in oi_json:
-        logger.warning(f'market_data not in coin {coin_id}: {oi_json}')
-        return None
-    try:
-        return oi_json['market_data']['market_cap']['usd']
-    except KeyError as e:
-        raise KeyError(oi_data) from e
 
 
 class MultipleIdException(Exception):
@@ -146,7 +96,7 @@ def top_mcap(date: datetime.date, dry_run: bool = False) -> list[str]:
 
 class TestSymbols(unittest.TestCase):
     def test_a(self):
-        date = datetime.date(year=2022, month=12, day=1)
+        date = datetime.date(year=2022, month=1, day=1)
         top_mcap(date)
 
 
@@ -227,8 +177,8 @@ def load_universe_candles(universe: Universe,
     assert max(df['Close time'] - df['Close time'].astype(int)) == 0
     df['Close time'] = df['Close time'].astype(int)
 
+    # TODO Replace this with int
     df['open_time'] = pd.to_datetime(df['Open time'], unit='ms')
     df['close_time'] = pd.to_datetime(df['Close time'], unit='ms')
-
     idx = (df['close_time'] >= start_date) & (df['close_time'] <= end_date)
     return df[idx]
